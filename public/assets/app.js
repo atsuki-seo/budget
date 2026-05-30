@@ -242,6 +242,19 @@ function bindCommonEvents() {
     }
   });
 
+  elements.loginPassword.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    if (typeof elements.loginForm.requestSubmit === 'function') {
+      elements.loginForm.requestSubmit();
+    } else {
+      elements.loginForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    }
+  });
+
   elements.logoutButton.addEventListener('click', async () => {
     try {
       await api('api/session.php', { method: 'DELETE' });
