@@ -1,6 +1,6 @@
 # Budget
 
-Static/PHP smoke-check deployment for `https://example.com/budget`.
+Static/PHP smoke-check deployment for `http://example.com/budget`.
 
 The GitHub Actions workflow mirrors only `public/` to the Xserver target directory:
 
@@ -76,7 +76,7 @@ gh api --method POST repos/YOUR_GITHUB_OWNER/budget/environments/xserver-product
 | `XSERVER_PORT` | `10022` |
 | `XSERVER_USER` | `YOUR_XSERVER_USER` |
 | `XSERVER_TARGET_DIR` | `YOUR_XSERVER_HOST/public_html/budget` |
-| `PUBLIC_URL` | `https://example.com/budget` |
+| `PUBLIC_URL` | `http://example.com/budget` |
 
 CLI equivalent:
 
@@ -85,10 +85,12 @@ gh variable set XSERVER_HOST --env xserver-production --body "YOUR_XSERVER_HOST"
 gh variable set XSERVER_PORT --env xserver-production --body "10022"
 gh variable set XSERVER_USER --env xserver-production --body "YOUR_XSERVER_USER"
 gh variable set XSERVER_TARGET_DIR --env xserver-production --body "YOUR_XSERVER_HOST/public_html/budget"
-gh variable set PUBLIC_URL --env xserver-production --body "https://example.com/budget"
+gh variable set PUBLIC_URL --env xserver-production --body "http://example.com/budget"
 ```
 
 Before the first GitHub Actions connection test, turn Xserver's foreign IP access restriction OFF for SSH.
+
+The Xserver initial domain currently serves this deployment over HTTP. Use an HTTPS `PUBLIC_URL` only after the host has a matching SSL certificate.
 
 ## Initial Push
 
@@ -118,8 +120,8 @@ The workflow:
 After deployment, check:
 
 ```sh
-curl -fsSL https://example.com/budget/
-curl -fsSL https://example.com/budget/health.php
+curl -fsSL http://example.com/budget/
+curl -fsSL http://example.com/budget/health.php
 ```
 
 The PHP health check should return:
