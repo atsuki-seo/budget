@@ -2,12 +2,12 @@
 
 PHP + MySQL household budget app for `https://example.com/budget`.
 
-The app exposes read-only transaction views publicly. Admin-only changes, including CSV import, transaction delete/restore, and import deletion, require the single admin password configured outside the web root.
+The app exposes read-only transaction views publicly. Admin-only changes, including CSV import and import deletion, require the single admin password configured outside the web root.
 
 ## Repository Layout
 
 ```text
-database/schema.sql      MySQL/MariaDB schema
+database/schema.sql      Current MySQL/MariaDB schema
 public/                  Files mirrored to Xserver public_html/budget
 public/admin/            Admin screen for CSV import
 public/api/              JSON API endpoints
@@ -33,10 +33,13 @@ Secrets and local CSV exports are not committed. The production config file live
 Public read API:
 
 - `GET /api/transactions.php`
-- `GET /api/summary.php?group_by=day|week|month`
+- `GET /api/summary.php`
 
-`GET /api/transactions.php` defaults to `limit=100`, `sort=used_on`, and `dir=desc`.
-The public `/budget/` UI fixes the transaction view to billing month (`amount_basis=billing`, `group_by=month`) and exposes only start/end month selectors for months with data.
+`GET /api/transactions.php` supports `date_from`, `date_to`, `limit`, and `offset`.
+Dates filter `statement_payment_on`, `limit` defaults to `100`, and rows are ordered by `used_on DESC, id DESC`.
+
+`GET /api/summary.php` supports `date_from` and `date_to`, groups by payment month from `statement_payment_on`, and sums `billing_amount`.
+The public `/budget/` UI exposes only start/end payment-month selectors for months with data.
 
 Admin API:
 
@@ -46,12 +49,11 @@ Admin API:
 - `POST /api/imports.php`
 - `GET /api/imports.php`
 - `DELETE /api/imports.php?id=...`
-- `DELETE /api/transactions.php?id=...`
-- `POST /api/transactions.php?action=restore&id=...`
 
 All API responses are JSON with `Cache-Control: no-store`. Mutating admin requests require both an authenticated PHP session and the `X-CSRF-Token` header.
 
-`GET /api/imports.php` defaults to `limit=5`, supports `offset`, excludes soft-deleted imports, and returns only the latest import for each `statement_payment_on`.
+`GET /api/imports.php` defaults to `limit=5`, supports `offset`, and returns import log rows in reverse import order.
+`DELETE /api/imports.php?id=...` physically deletes the import row. Transactions still attached to that import are deleted by the foreign key cascade.
 
 ## Initial Xserver Setup
 
@@ -105,21 +107,14 @@ For local HTTP-only development, set `'cookie_secure' => false` in a local ignor
 
 The importer validates CSV headers and values, not file extensions. Each CSV must contain exactly one `当月お支払日`.
 
-Re-uploading the same payment-month CSV is safe:
+Re-uploading the same payment-month CSV performs a month replacement:
 
-- Rows already present with the same content are kept.
-- Rows with the same identity but changed content are updated.
-- Rows newly present in the CSV are inserted.
-- Rows missing from the latest same-month CSV are marked with `superseded_at`.
-- User-deleted rows use `deleted_at` and are not restored by re-upload.
+- Existing `transactions` rows with the same `statement_payment_on` are physically deleted first.
+- All rows from the uploaded CSV are inserted and attached to the new `imports.id`.
+- Other payment dates are not changed.
+- Future provisional manual rows use `import_id = NULL` and are also replaced when a CSV with the same payment date arrives.
 
-The budget default amount/date is:
-
-- `支払区分 = 1回`: `利用日/キャンセル日` and `利用金額`
-- `支払区分 = 均等 ...`: `当月お支払日` and `当月支払金額`
-- Other non-`1回` categories use the same payment-date basis.
-
-Label tables remain in the schema for existing data safety, but the label UI and label API are no longer exposed.
+The CSV file is treated as the source of truth. Per-row diff tracking, transaction soft delete/restore, budget date/amount derivation, and labels are not part of the current schema or API.
 
 ## Deployment
 
@@ -236,8 +231,7 @@ OK
 ## Security Notes
 
 - PDO uses native prepared statements, exception mode, and `charset=utf8mb4`.
-- SQL structure values such as `group_by`, `amount_basis`, sort fields, IDs, and paging are allowlisted or integer-clamped.
-- Merchant search uses escaped `LIKE` partial matching only.
+- SQL structure values are fixed in code; IDs and paging are integer-clamped.
 - Frontend rendering uses `textContent` for user-controlled strings.
 - `robots.txt` and `<meta name="robots" content="noindex, nofollow">` reduce search exposure but are not access control.
 

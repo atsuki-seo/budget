@@ -306,25 +306,6 @@ td.wrap-cell {
   text-align: right;
 }
 
-.status {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: var(--surface-strong);
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.status.deleted {
-  background: #fff1f0;
-  color: var(--danger);
-}
-
-.status.superseded {
-  background: #fff7ed;
-  color: var(--warning);
-}
-
 .dialog-form {
   width: min(100vw - 48px, 420px);
   display: grid;

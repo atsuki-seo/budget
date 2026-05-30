@@ -54,10 +54,13 @@ $parsed = test_parse("\xEF\xBB\xBF" . $header
 
 test_assert($parsed['statement_payment_on'] === '2026-04-27', 'statement payment date is normalized');
 test_assert(count($parsed['rows']) === 2, 'BOM UTF-8 CSV rows are parsed');
-test_assert($parsed['rows'][0]['fields']['budget_date'] === '2026-03-01', 'one-time budget date uses used_on');
-test_assert($parsed['rows'][0]['fields']['budget_amount'] === 111111, 'one-time budget amount uses usage_amount');
-test_assert($parsed['rows'][1]['fields']['budget_date'] === '2026-04-27', 'installment budget date uses statement payment date');
-test_assert($parsed['rows'][1]['fields']['budget_amount'] === 22222, 'installment budget amount uses billing_amount');
+test_assert($parsed['rows'][0]['fields']['used_on'] === '2026-03-01', 'used date is normalized');
+test_assert($parsed['rows'][0]['fields']['statement_payment_on'] === '2026-04-27', 'row statement payment date is normalized');
+test_assert($parsed['rows'][0]['fields']['usage_amount'] === 111111, 'usage amount is parsed');
+test_assert($parsed['rows'][1]['fields']['billing_amount'] === 22222, 'billing amount is parsed');
+test_assert(!array_key_exists('fee_amount', $parsed['rows'][0]['fields']), 'fee amount is not returned');
+test_assert(!array_key_exists('budget_date', $parsed['rows'][0]['fields']), 'budget date is not returned');
+test_assert(!array_key_exists('budget_amount', $parsed['rows'][0]['fields']), 'budget amount is not returned');
 
 $missingHeader = '"利用日/キャンセル日","利用店名・商品名","利用者","決済方法","支払区分","利用金額","手数料","支払総額","当月支払金額","翌月以降繰越金額","当月お支払日"' . "\n"
     . '"2026/3/1","DUMMY_CARD_MERCHANT_A","本人","PayPayカード ゴールド","1回","111111","0","111111","111111","0","2026/4/27"' . "\n";
@@ -72,9 +75,8 @@ $duplicates = test_parse($header
     . '"2026/3/1","DUMMY_CARD_MERCHANT_A","本人","PayPayカード ゴールド","1回","111111","0","111111","111111","0","0","2026/4/27"' . "\n"
     . '"2026/3/1","DUMMY_CARD_MERCHANT_A","本人","PayPayカード ゴールド","1回","111111","0","111111","111111","0","0","2026/4/27"' . "\n");
 
-test_assert($duplicates['rows'][0]['identity_hash'] === $duplicates['rows'][1]['identity_hash'], 'duplicate rows share identity hash');
-test_assert($duplicates['rows'][0]['occurrence_no'] === 1, 'first duplicate occurrence number is 1');
-test_assert($duplicates['rows'][1]['occurrence_no'] === 2, 'second duplicate occurrence number is 2');
+test_assert(count($duplicates['rows']) === 2, 'duplicate CSV rows are preserved');
+test_assert(!array_key_exists('identity_hash', $duplicates['rows'][0]), 'identity hash is not returned');
+test_assert(!array_key_exists('occurrence_no', $duplicates['rows'][0]), 'occurrence number is not returned');
 
 echo "OK\n";
-

@@ -284,66 +284,23 @@ function budget_optional_date_param(string $name): ?string
     return $raw;
 }
 
-function budget_like_pattern(string $value): string
+function budget_transaction_filter_sql(array &$params): array
 {
-    $limited = budget_clean_text($value, 80, 'q');
-    return '%' . strtr($limited, [
-        '\\' => '\\\\',
-        '%' => '\\%',
-        '_' => '\\_',
-    ]) . '%';
-}
-
-function budget_amount_basis(): array
-{
-    $basis = $_GET['amount_basis'] ?? 'budget';
-    if (!is_string($basis)) {
-        $basis = 'budget';
-    }
-
-    $map = [
-        'budget' => ['t.budget_date', 't.budget_amount'],
-        'usage' => ['t.used_on', 't.usage_amount'],
-        'billing' => ['t.statement_payment_on', 't.billing_amount'],
-    ];
-
-    if (!isset($map[$basis])) {
-        throw new InvalidArgumentException('amount_basis is invalid.');
-    }
-
-    return [$basis, $map[$basis][0], $map[$basis][1]];
-}
-
-function budget_transaction_filter_sql(array &$params, bool $includeDeleted, string $dateColumn): array
-{
-    $joins = ['JOIN imports i ON i.id = t.import_id'];
     $where = [];
-
-    if (!$includeDeleted) {
-        $where[] = 't.deleted_at IS NULL';
-        $where[] = 't.superseded_at IS NULL';
-        $where[] = 'i.deleted_at IS NULL';
-    }
-
-    $query = $_GET['q'] ?? '';
-    if (is_string($query) && trim($query) !== '') {
-        $where[] = "t.merchant LIKE ? ESCAPE '\\\\'";
-        $params[] = budget_like_pattern($query);
-    }
 
     $dateFrom = budget_optional_date_param('date_from');
     if ($dateFrom !== null) {
-        $where[] = "$dateColumn >= ?";
+        $where[] = 't.statement_payment_on >= ?';
         $params[] = $dateFrom;
     }
 
     $dateTo = budget_optional_date_param('date_to');
     if ($dateTo !== null) {
-        $where[] = "$dateColumn <= ?";
+        $where[] = 't.statement_payment_on <= ?';
         $params[] = $dateTo;
     }
 
-    return [$joins, $where];
+    return $where;
 }
 
 function budget_parse_csv_date(string $value, string $field, int $line): string
@@ -371,16 +328,6 @@ function budget_parse_csv_amount(string $value, string $field, int $line): int
     }
 
     return (int)$value;
-}
-
-function budget_hash(array $fields): string
-{
-    $json = json_encode($fields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    if (!is_string($json)) {
-        throw new InvalidArgumentException('CSV row contains invalid UTF-8.');
-    }
-
-    return hash('sha256', $json);
 }
 
 function budget_normalize_csv_header(string $header): string
@@ -413,54 +360,27 @@ function budget_normalize_csv_row(array $row, int $line): array
     }
 
     $usageAmount = budget_parse_csv_amount($row['利用金額'], '利用金額', $line);
-    $feeAmount = budget_parse_csv_amount($row['手数料'], '手数料', $line);
     $totalAmount = budget_parse_csv_amount($row['支払総額'], '支払総額', $line);
     $billingAmount = budget_parse_csv_amount($row['当月支払金額'], '当月支払金額', $line);
     $carriedForwardAmount = budget_parse_csv_amount($row['翌月以降繰越金額'], '翌月以降繰越金額', $line);
     $adjustmentAmount = budget_parse_csv_amount($row['調整額'], '調整額', $line);
 
-    if ($paymentCategory === '1回') {
-        $budgetDate = $usedOn;
-        $budgetAmount = $usageAmount;
-    } else {
-        $budgetDate = $statementPaymentOn;
-        $budgetAmount = $billingAmount;
-    }
-
     $normalized = [
+        'statement_payment_on' => $statementPaymentOn,
         'used_on' => $usedOn,
         'merchant' => $merchant,
         'card_user' => $cardUser,
         'payment_method' => $paymentMethod,
         'payment_category' => $paymentCategory,
         'usage_amount' => $usageAmount,
-        'fee_amount' => $feeAmount,
         'total_amount' => $totalAmount,
         'billing_amount' => $billingAmount,
         'carried_forward_amount' => $carriedForwardAmount,
         'adjustment_amount' => $adjustmentAmount,
-        'statement_payment_on' => $statementPaymentOn,
-        'budget_date' => $budgetDate,
-        'budget_amount' => $budgetAmount,
-    ];
-
-    $identityFields = [
-        'used_on' => $usedOn,
-        'merchant' => $merchant,
-        'card_user' => $cardUser,
-        'payment_method' => $paymentMethod,
-        'payment_category' => $paymentCategory,
-        'usage_amount' => $usageAmount,
-        'fee_amount' => $feeAmount,
-        'total_amount' => $totalAmount,
     ];
 
     return [
         'fields' => $normalized,
-        'identity_hash' => budget_hash($identityFields),
-        'content_hash' => budget_hash($normalized),
-        'raw' => $row,
-        'source_row_number' => $line,
     ];
 }
 
@@ -500,7 +420,6 @@ function budget_parse_csv_file(string $path, int $maxRows = 5000): array
 
         $rows = [];
         $statementPaymentOn = null;
-        $occurrences = [];
         $line = 1;
 
         while (($data = fgetcsv($handle)) !== false) {
@@ -527,9 +446,6 @@ function budget_parse_csv_file(string $path, int $maxRows = 5000): array
                 throw new InvalidArgumentException('CSV must contain only one 当月お支払日.');
             }
 
-            $identityHash = $normalized['identity_hash'];
-            $occurrences[$identityHash] = ($occurrences[$identityHash] ?? 0) + 1;
-            $normalized['occurrence_no'] = $occurrences[$identityHash];
             $rows[] = $normalized;
         }
 
@@ -566,19 +482,16 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
     $parsed = budget_parse_csv_file($path);
     $sourceName = budget_safe_upload_name($originalName);
 
-    $inserted = 0;
-    $updated = 0;
-    $unchanged = 0;
-    $superseded = 0;
-    $currentKeys = [];
-
     $pdo->beginTransaction();
 
     try {
+        $deleteExisting = $pdo->prepare('DELETE FROM transactions WHERE statement_payment_on = ?');
+        $deleteExisting->execute([$parsed['statement_payment_on']]);
+
         $insertImport = $pdo->prepare(
             'INSERT INTO imports
-                (statement_payment_on, source_filename, row_count, inserted_count, updated_count, unchanged_count, superseded_count)
-             VALUES (?, ?, ?, 0, 0, 0, 0)'
+                (statement_payment_on, source_filename, row_count)
+             VALUES (?, ?, ?)'
         );
         $insertImport->execute([
             $parsed['statement_payment_on'],
@@ -587,161 +500,31 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
         ]);
         $importId = (int)$pdo->lastInsertId();
 
-        $selectTransaction = $pdo->prepare(
-            'SELECT id, content_hash
-             FROM transactions
-             WHERE statement_payment_on = ?
-               AND identity_hash = ?
-               AND occurrence_no = ?
-             FOR UPDATE'
-        );
-
         $insertTransaction = $pdo->prepare(
             'INSERT INTO transactions
                 (import_id, statement_payment_on, used_on, merchant, card_user, payment_method, payment_category,
-                 usage_amount, fee_amount, total_amount, billing_amount, carried_forward_amount, adjustment_amount,
-                 budget_date, budget_amount, identity_hash, content_hash, occurrence_no, raw_data_json, source_row_number)
+                 usage_amount, total_amount, billing_amount, carried_forward_amount, adjustment_amount)
              VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
-
-        $updateTransaction = $pdo->prepare(
-            'UPDATE transactions
-             SET import_id = ?,
-                 used_on = ?,
-                 merchant = ?,
-                 card_user = ?,
-                 payment_method = ?,
-                 payment_category = ?,
-                 usage_amount = ?,
-                 fee_amount = ?,
-                 total_amount = ?,
-                 billing_amount = ?,
-                 carried_forward_amount = ?,
-                 adjustment_amount = ?,
-                 budget_date = ?,
-                 budget_amount = ?,
-                 content_hash = ?,
-                 raw_data_json = ?,
-                 source_row_number = ?,
-                 superseded_at = NULL,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?'
-        );
-
-        $touchTransaction = $pdo->prepare(
-            'UPDATE transactions
-             SET import_id = ?,
-                 superseded_at = NULL,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?'
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
         foreach ($parsed['rows'] as $row) {
             $fields = $row['fields'];
-            $key = $row['identity_hash'] . ':' . $row['occurrence_no'];
-            $currentKeys[$key] = true;
-
-            $rawJson = json_encode($row['raw'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            if (!is_string($rawJson)) {
-                throw new InvalidArgumentException('CSV row contains invalid UTF-8.');
-            }
-
-            $selectTransaction->execute([
-                $fields['statement_payment_on'],
-                $row['identity_hash'],
-                $row['occurrence_no'],
-            ]);
-            $existing = $selectTransaction->fetch();
-
-            if ($existing === false) {
-                $insertTransaction->execute([
-                    $importId,
-                    $fields['statement_payment_on'],
-                    $fields['used_on'],
-                    $fields['merchant'],
-                    $fields['card_user'],
-                    $fields['payment_method'],
-                    $fields['payment_category'],
-                    $fields['usage_amount'],
-                    $fields['fee_amount'],
-                    $fields['total_amount'],
-                    $fields['billing_amount'],
-                    $fields['carried_forward_amount'],
-                    $fields['adjustment_amount'],
-                    $fields['budget_date'],
-                    $fields['budget_amount'],
-                    $row['identity_hash'],
-                    $row['content_hash'],
-                    $row['occurrence_no'],
-                    $rawJson,
-                    $row['source_row_number'],
-                ]);
-                $inserted++;
-                continue;
-            }
-
-            $transactionId = (int)$existing['id'];
-            if ((string)$existing['content_hash'] === $row['content_hash']) {
-                $touchTransaction->execute([$importId, $transactionId]);
-                $unchanged++;
-                continue;
-            }
-
-            $updateTransaction->execute([
+            $insertTransaction->execute([
                 $importId,
+                $fields['statement_payment_on'],
                 $fields['used_on'],
                 $fields['merchant'],
                 $fields['card_user'],
                 $fields['payment_method'],
                 $fields['payment_category'],
                 $fields['usage_amount'],
-                $fields['fee_amount'],
                 $fields['total_amount'],
                 $fields['billing_amount'],
                 $fields['carried_forward_amount'],
                 $fields['adjustment_amount'],
-                $fields['budget_date'],
-                $fields['budget_amount'],
-                $row['content_hash'],
-                $rawJson,
-                $row['source_row_number'],
-                $transactionId,
             ]);
-            $updated++;
         }
-
-        $selectExisting = $pdo->prepare(
-            'SELECT id, identity_hash, occurrence_no
-             FROM transactions
-             WHERE statement_payment_on = ?
-             FOR UPDATE'
-        );
-        $selectExisting->execute([$parsed['statement_payment_on']]);
-        $markSuperseded = $pdo->prepare(
-            'UPDATE transactions
-             SET superseded_at = CURRENT_TIMESTAMP,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ? AND superseded_at IS NULL'
-        );
-
-        foreach ($selectExisting->fetchAll() as $existingRow) {
-            $key = $existingRow['identity_hash'] . ':' . $existingRow['occurrence_no'];
-            if (!isset($currentKeys[$key])) {
-                $markSuperseded->execute([(int)$existingRow['id']]);
-                $superseded += $markSuperseded->rowCount();
-            }
-        }
-
-        $updateImport = $pdo->prepare(
-            'UPDATE imports
-             SET inserted_count = ?,
-                 updated_count = ?,
-                 unchanged_count = ?,
-                 superseded_count = ?
-             WHERE id = ?'
-        );
-        $updateImport->execute([$inserted, $updated, $unchanged, $superseded, $importId]);
 
         $pdo->commit();
 
@@ -749,10 +532,6 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
             'id' => $importId,
             'statement_payment_on' => $parsed['statement_payment_on'],
             'row_count' => count($parsed['rows']),
-            'inserted_count' => $inserted,
-            'updated_count' => $updated,
-            'unchanged_count' => $unchanged,
-            'superseded_count' => $superseded,
         ];
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) {

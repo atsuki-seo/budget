@@ -13,42 +13,18 @@ try {
         $limit = budget_int_param('limit', 5, 1, 200);
         $offset = budget_int_param('offset', 0, 0, 1000000);
 
-        $totalStmt = $pdo->query(
-            'SELECT COUNT(*)
-             FROM (
-                SELECT statement_payment_on
-                FROM imports
-                WHERE deleted_at IS NULL
-                GROUP BY statement_payment_on
-             ) payment_dates'
-        );
+        $totalStmt = $pdo->query('SELECT COUNT(*) FROM imports');
         $total = (int)$totalStmt->fetchColumn();
 
         $stmt = $pdo->query(
             "SELECT
-                i.id,
-                i.statement_payment_on,
-                i.source_filename,
-                i.row_count,
-                i.inserted_count,
-                i.updated_count,
-                i.unchanged_count,
-                i.superseded_count,
-                i.imported_at,
-                i.deleted_at
-             FROM imports i
-             WHERE i.deleted_at IS NULL
-               AND NOT EXISTS (
-                    SELECT 1
-                    FROM imports newer
-                    WHERE newer.deleted_at IS NULL
-                      AND newer.statement_payment_on = i.statement_payment_on
-                      AND (
-                        newer.imported_at > i.imported_at
-                        OR (newer.imported_at = i.imported_at AND newer.id > i.id)
-                      )
-               )
-             ORDER BY i.imported_at DESC, i.id DESC
+                id,
+                statement_payment_on,
+                source_filename,
+                row_count,
+                imported_at
+             FROM imports
+             ORDER BY imported_at DESC, id DESC
              LIMIT $limit OFFSET $offset"
         );
 
@@ -59,12 +35,7 @@ try {
                 'statement_payment_on' => $row['statement_payment_on'],
                 'source_filename' => $row['source_filename'],
                 'row_count' => (int)$row['row_count'],
-                'inserted_count' => (int)$row['inserted_count'],
-                'updated_count' => (int)$row['updated_count'],
-                'unchanged_count' => (int)$row['unchanged_count'],
-                'superseded_count' => (int)$row['superseded_count'],
                 'imported_at' => $row['imported_at'],
-                'deleted_at' => $row['deleted_at'],
             ];
         }
 
@@ -110,11 +81,7 @@ try {
     budget_require_csrf();
     $pdo = budget_pdo();
     $id = budget_required_id(isset($_GET['id']) ? (string)$_GET['id'] : null);
-    $stmt = $pdo->prepare(
-        'UPDATE imports
-         SET deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP)
-         WHERE id = ?'
-    );
+    $stmt = $pdo->prepare('DELETE FROM imports WHERE id = ?');
     $stmt->execute([$id]);
 
     budget_json_response(['deleted' => $stmt->rowCount() > 0]);

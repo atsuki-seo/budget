@@ -420,18 +420,13 @@ function selectedMonthRangeDates() {
   };
 }
 
-function queryParams({ includePaging = false, includeGroupBy = false } = {}) {
+function queryParams({ includePaging = false } = {}) {
   const params = new URLSearchParams();
-  params.set('amount_basis', 'billing');
 
   const range = selectedMonthRangeDates();
   if (range !== null) {
     params.set('date_from', range.dateFrom);
     params.set('date_to', range.dateTo);
-  }
-
-  if (includeGroupBy) {
-    params.set('group_by', 'month');
   }
 
   if (includePaging) {
@@ -533,11 +528,7 @@ function renderMonthFilters() {
 
 async function loadAvailableMonths() {
   try {
-    const params = new URLSearchParams({
-      amount_basis: 'billing',
-      group_by: 'month',
-    });
-    const data = await api(`api/summary.php?${params.toString()}`);
+    const data = await api('api/summary.php');
     const months = (data.items || [])
       .map((item) => String(item.period_start || '').slice(0, 7))
       .filter(isMonthValue)
@@ -585,7 +576,7 @@ async function refreshData() {
 
 async function loadSummary() {
   try {
-    const params = queryParams({ includeGroupBy: true });
+    const params = queryParams();
     const data = await api(`api/summary.php?${params.toString()}`);
     renderSummary(data.items || []);
   } catch (error) {
@@ -706,7 +697,7 @@ function renderImports() {
 
   if (state.imports.length === 0) {
     const row = createElement('tr');
-    const cell = createElement('td', { className: 'empty', text: '取込履歴なし', attrs: { colspan: 9 } });
+    const cell = createElement('td', { className: 'empty', text: '取込履歴なし', attrs: { colspan: 5 } });
     row.append(cell);
     elements.importsBody.replaceChildren(row);
     return;
@@ -718,15 +709,6 @@ function renderImports() {
     appendCell(row, '支払日', item.statement_payment_on);
     appendCell(row, 'CSV', item.source_filename, 'wrap-cell');
     appendCell(row, '件数', item.row_count, 'number');
-    appendCell(row, '追加', item.inserted_count, 'number');
-    appendCell(row, '更新', item.updated_count, 'number');
-    appendCell(row, '差替', item.superseded_count, 'number');
-    const statusCell = createElement('td', { attrs: { 'data-label': '状態' } });
-    statusCell.append(createElement('span', {
-      className: 'status',
-      text: '有効',
-    }));
-    row.append(statusCell);
 
     const actionCell = createElement('td', { attrs: { 'data-label': '操作' } });
     const button = createElement('button', {
