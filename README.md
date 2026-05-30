@@ -60,6 +60,16 @@ gh secret set XSERVER_KNOWN_HOSTS --env xserver-production < .ssh/xserver_known_
 
 Create the GitHub environment `xserver-production`, restrict it to the `main` branch, and set these environment variables:
 
+```sh
+gh api --method PUT repos/YOUR_GITHUB_OWNER/budget/environments/xserver-production \
+  -F wait_timer=0 \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true'
+
+gh api --method POST repos/YOUR_GITHUB_OWNER/budget/environments/xserver-production/deployment-branch-policies \
+  -f name=main
+```
+
 | Name | Value |
 | --- | --- |
 | `XSERVER_HOST` | `YOUR_XSERVER_HOST` |
