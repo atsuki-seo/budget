@@ -1,12 +1,26 @@
+const page = document.body.dataset.page || 'transactions';
+const appRootUrl = new URL('../', import.meta.url);
+const pageUrls = {
+  transactions: new URL('./', appRootUrl),
+  admin: new URL('admin/', appRootUrl),
+};
+
 const state = {
+  page,
   csrfToken: '',
   loggedIn: false,
-  labels: [],
   transactions: [],
-  imports: [],
   total: 0,
   limit: 100,
   offset: 0,
+  imports: [],
+  importsTotal: 0,
+  importsLimit: 5,
+  importsOffset: 0,
+  availableMonths: [],
+  defaultMonth: '',
+  selectedMonthFrom: '',
+  selectedMonthTo: '',
   filtersExpanded: true,
 };
 
@@ -39,12 +53,20 @@ function createElement(tag, options = {}) {
 }
 
 function showToast(message) {
+  if (!elements.toast) {
+    return;
+  }
+
   elements.toast.textContent = message;
   elements.toast.hidden = false;
   window.clearTimeout(showToast.timer);
   showToast.timer = window.setTimeout(() => {
     elements.toast.hidden = true;
   }, 4200);
+}
+
+function apiUrl(path) {
+  return new URL(path, appRootUrl).toString();
 }
 
 async function api(path, options = {}) {
@@ -69,7 +91,7 @@ async function api(path, options = {}) {
     init.body = options.body;
   }
 
-  const response = await fetch(path, init);
+  const response = await fetch(apiUrl(path), init);
   const text = await response.text();
   let data = {};
   if (text.trim() !== '') {
@@ -81,7 +103,9 @@ async function api(path, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(data.error || `HTTP ${response.status}`);
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -95,90 +119,126 @@ function formatDate(value) {
   return value || '-';
 }
 
-function formatPeriod(value, groupBy) {
-  if (!value) {
-    return '-';
-  }
-  if (groupBy === 'month') {
-    return value.slice(0, 7);
-  }
-  if (groupBy === 'week') {
-    return `${value}週`;
-  }
-  return value;
+function navigateTo(url) {
+  window.location.assign(url.toString());
 }
 
-function bindElements() {
+function bindCommonElements() {
   elements.loginButton = $('#loginButton');
+  elements.adminButton = $('#adminButton');
+  elements.transactionsButton = $('#transactionsButton');
   elements.logoutButton = $('#logoutButton');
   elements.loginDialog = $('#loginDialog');
   elements.loginForm = $('#loginForm');
   elements.loginPassword = $('#loginForm input[name="password"]');
   elements.cancelLoginButton = $('#cancelLoginButton');
+  elements.toast = $('#toast');
+}
+
+function bindTransactionsElements() {
   elements.filtersForm = $('#filtersForm');
+  elements.monthFromSelect = $('#filtersForm select[name="date_from_month"]');
+  elements.monthToSelect = $('#filtersForm select[name="date_to_month"]');
   elements.filtersToggleButton = $('#filtersToggleButton');
   elements.resetFiltersButton = $('#resetFiltersButton');
   elements.summaryAmount = $('#summaryAmount');
-  elements.summaryChart = $('#summaryChart');
-  elements.adminPanel = $('#adminPanel');
-  elements.importForm = $('#importForm');
-  elements.importsBody = $('#importsBody');
-  elements.labelForm = $('#labelForm');
-  elements.labelsList = $('#labelsList');
   elements.resultCount = $('#resultCount');
   elements.transactionsBody = $('#transactionsBody');
   elements.prevPageButton = $('#prevPageButton');
   elements.nextPageButton = $('#nextPageButton');
-  elements.adminHeader = $('#adminHeader');
-  elements.toast = $('#toast');
 }
 
-function bindEvents() {
-  bindFiltersToggle();
+function bindAdminElements() {
+  elements.adminContent = $('#adminContent');
+  elements.importForm = $('#importForm');
+  elements.importsBody = $('#importsBody');
+  elements.importsResultCount = $('#importsResultCount');
+  elements.prevImportsPageButton = $('#prevImportsPageButton');
+  elements.nextImportsPageButton = $('#nextImportsPageButton');
+}
 
-  elements.loginButton.addEventListener('click', () => {
-    elements.loginForm.reset();
-    if (typeof elements.loginDialog.showModal === 'function') {
-      elements.loginDialog.showModal();
-    } else {
-      elements.loginDialog.setAttribute('open', '');
-    }
-    window.requestAnimationFrame(() => {
-      elements.loginPassword.focus();
-    });
+function showLoginDialog() {
+  elements.loginForm.reset();
+  if (elements.loginDialog.open) {
+    elements.loginPassword.focus();
+    return;
+  }
+
+  if (typeof elements.loginDialog.showModal === 'function') {
+    elements.loginDialog.showModal();
+  } else {
+    elements.loginDialog.setAttribute('open', '');
+  }
+  window.requestAnimationFrame(() => {
+    elements.loginPassword.focus();
   });
+}
+
+function closeLoginDialog() {
+  if (typeof elements.loginDialog.close === 'function' && elements.loginDialog.open) {
+    elements.loginDialog.close();
+    return;
+  }
+
+  elements.loginDialog.removeAttribute('open');
+}
+
+function bindCommonEvents() {
+  if (elements.loginButton) {
+    elements.loginButton.addEventListener('click', showLoginDialog);
+  }
+
+  if (elements.adminButton) {
+    elements.adminButton.addEventListener('click', () => navigateTo(pageUrls.admin));
+  }
+
+  if (elements.transactionsButton) {
+    elements.transactionsButton.addEventListener('click', () => navigateTo(pageUrls.transactions));
+  }
 
   elements.cancelLoginButton.addEventListener('click', () => {
-    elements.loginDialog.close();
+    if (state.page === 'admin') {
+      navigateTo(pageUrls.transactions);
+      return;
+    }
+
+    closeLoginDialog();
+  });
+
+  elements.loginDialog.addEventListener('cancel', (event) => {
+    if (state.page !== 'admin') {
+      return;
+    }
+
+    event.preventDefault();
+    navigateTo(pageUrls.transactions);
   });
 
   elements.loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(elements.loginForm);
     try {
+      if (!state.csrfToken) {
+        await loadSession();
+      }
+
       const data = await api('api/session.php', {
         method: 'POST',
         json: { password: formData.get('password') || '' },
       });
       state.loggedIn = Boolean(data.logged_in);
       state.csrfToken = data.csrf_token || state.csrfToken;
-      elements.loginDialog.close();
+      closeLoginDialog();
+
+      if (state.page === 'transactions') {
+        navigateTo(pageUrls.admin);
+        return;
+      }
+
       renderAuth();
-      await refreshAll();
+      await loadImports();
     } catch (error) {
       showToast(error.message);
-    }
-  });
-
-  elements.loginPassword.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' || event.isComposing) {
-      return;
-    }
-    event.preventDefault();
-    if (typeof elements.loginForm.requestSubmit === 'function') {
-      elements.loginForm.requestSubmit();
-    } else {
-      elements.loginForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     }
   });
 
@@ -186,14 +246,22 @@ function bindEvents() {
     try {
       await api('api/session.php', { method: 'DELETE' });
       state.loggedIn = false;
-      state.offset = 0;
+      state.csrfToken = '';
+
+      if (state.page === 'admin') {
+        navigateTo(pageUrls.transactions);
+        return;
+      }
+
       await loadSession();
-      renderAuth();
-      await refreshAll();
     } catch (error) {
       showToast(error.message);
     }
   });
+}
+
+function bindTransactionsEvents() {
+  bindFiltersToggle();
 
   elements.filtersForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -201,12 +269,14 @@ function bindEvents() {
 
   elements.filtersForm.addEventListener('change', async (event) => {
     event.preventDefault();
+    updateSelectedMonthsFromControls(event.target);
+    renderMonthFilters();
     state.offset = 0;
     await refreshData();
   });
 
   elements.resetFiltersButton.addEventListener('click', async () => {
-    elements.filtersForm.reset();
+    resetMonthFilters();
     state.offset = 0;
     await refreshData();
   });
@@ -220,7 +290,9 @@ function bindEvents() {
     state.offset += state.limit;
     await loadTransactions();
   });
+}
 
+function bindAdminEvents() {
   elements.importForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(elements.importForm);
@@ -236,29 +308,21 @@ function bindEvents() {
         body: formData,
       });
       elements.importForm.reset();
-      state.offset = 0;
-      await refreshAll();
+      state.importsOffset = 0;
+      await loadImports();
     } catch (error) {
       showToast(error.message);
     }
   });
 
-  elements.labelForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const formData = new FormData(elements.labelForm);
-    try {
-      await api('api/labels.php', {
-        method: 'POST',
-        json: {
-          name: formData.get('name') || '',
-          color: formData.get('color') || '#2563eb',
-        },
-      });
-      elements.labelForm.reset();
-      await refreshAll();
-    } catch (error) {
-      showToast(error.message);
-    }
+  elements.prevImportsPageButton.addEventListener('click', async () => {
+    state.importsOffset = Math.max(0, state.importsOffset - state.importsLimit);
+    await loadImports();
+  });
+
+  elements.nextImportsPageButton.addEventListener('click', async () => {
+    state.importsOffset += state.importsLimit;
+    await loadImports();
   });
 }
 
@@ -307,21 +371,54 @@ async function loadSession() {
 }
 
 function renderAuth() {
-  elements.loginButton.hidden = state.loggedIn;
+  if (state.page === 'transactions') {
+    elements.loginButton.hidden = state.loggedIn;
+    elements.adminButton.hidden = !state.loggedIn;
+    elements.logoutButton.hidden = !state.loggedIn;
+    return;
+  }
+
+  elements.adminContent.hidden = !state.loggedIn;
   elements.logoutButton.hidden = !state.loggedIn;
-  elements.adminPanel.hidden = !state.loggedIn;
-  elements.adminHeader.hidden = !state.loggedIn;
 }
 
-function queryParams(includePaging) {
-  const formData = new FormData(elements.filtersForm);
-  const params = new URLSearchParams();
+function isMonthValue(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}$/.test(value);
+}
 
-  for (const key of ['amount_basis', 'date_from', 'date_to']) {
-    const value = formData.get(key);
-    if (value !== null && String(value) !== '') {
-      params.set(key, String(value));
-    }
+function monthToDateFrom(month) {
+  return `${month}-01`;
+}
+
+function monthToDateTo(month) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const day = new Date(year, monthNumber, 0).getDate();
+  return `${month}-${String(day).padStart(2, '0')}`;
+}
+
+function selectedMonthRangeDates() {
+  if (!isMonthValue(state.selectedMonthFrom) || !isMonthValue(state.selectedMonthTo)) {
+    return null;
+  }
+
+  return {
+    dateFrom: monthToDateFrom(state.selectedMonthFrom),
+    dateTo: monthToDateTo(state.selectedMonthTo),
+  };
+}
+
+function queryParams({ includePaging = false, includeGroupBy = false } = {}) {
+  const params = new URLSearchParams();
+  params.set('amount_basis', 'billing');
+
+  const range = selectedMonthRangeDates();
+  if (range !== null) {
+    params.set('date_from', range.dateFrom);
+    params.set('date_to', range.dateTo);
+  }
+
+  if (includeGroupBy) {
+    params.set('group_by', 'month');
   }
 
   if (includePaging) {
@@ -332,72 +429,173 @@ function queryParams(includePaging) {
   return params;
 }
 
-async function refreshAll() {
-  await loadLabels();
-  await refreshData();
-  if (state.loggedIn) {
-    await loadImports();
-  } else {
-    state.imports = [];
-    renderImports();
+function setDefaultMonthSelection() {
+  state.selectedMonthFrom = state.defaultMonth;
+  state.selectedMonthTo = state.defaultMonth;
+}
+
+function resetMonthFilters() {
+  setDefaultMonthSelection();
+  renderMonthFilters();
+}
+
+function ensureSelectedMonthRange() {
+  if (state.availableMonths.length === 0) {
+    state.selectedMonthFrom = '';
+    state.selectedMonthTo = '';
+    return;
+  }
+
+  if (
+    !state.availableMonths.includes(state.selectedMonthFrom)
+    || !state.availableMonths.includes(state.selectedMonthTo)
+    || state.selectedMonthFrom > state.selectedMonthTo
+  ) {
+    setDefaultMonthSelection();
+  }
+}
+
+function updateSelectedMonthsFromControls(changedControl) {
+  if (state.availableMonths.length === 0) {
+    ensureSelectedMonthRange();
+    return;
+  }
+
+  let monthFrom = elements.monthFromSelect.value;
+  let monthTo = elements.monthToSelect.value;
+
+  if (!state.availableMonths.includes(monthFrom)) {
+    monthFrom = state.defaultMonth;
+  }
+  if (!state.availableMonths.includes(monthTo)) {
+    monthTo = state.defaultMonth;
+  }
+
+  if (monthFrom > monthTo) {
+    if (changedControl === elements.monthToSelect) {
+      monthFrom = monthTo;
+    } else {
+      monthTo = monthFrom;
+    }
+  }
+
+  state.selectedMonthFrom = monthFrom;
+  state.selectedMonthTo = monthTo;
+}
+
+function renderMonthSelect(select, months, selectedMonth) {
+  if (months.length === 0) {
+    select.replaceChildren(createElement('option', { text: 'データなし', attrs: { value: '' } }));
+    select.value = '';
+    select.disabled = true;
+    return;
+  }
+
+  const options = months.map((month) => createElement('option', { text: month, attrs: { value: month } }));
+  select.replaceChildren(...options);
+  select.value = selectedMonth;
+  select.disabled = false;
+}
+
+function renderMonthFilters() {
+  ensureSelectedMonthRange();
+
+  if (state.availableMonths.length === 0) {
+    renderMonthSelect(elements.monthFromSelect, [], '');
+    renderMonthSelect(elements.monthToSelect, [], '');
+    elements.resetFiltersButton.hidden = true;
+    return;
+  }
+
+  const monthsForStart = state.availableMonths.filter((month) => month <= state.selectedMonthTo);
+  const monthsForEnd = state.availableMonths.filter((month) => month >= state.selectedMonthFrom);
+
+  renderMonthSelect(elements.monthFromSelect, monthsForStart, state.selectedMonthFrom);
+  renderMonthSelect(elements.monthToSelect, monthsForEnd, state.selectedMonthTo);
+  elements.resetFiltersButton.hidden = (
+    state.selectedMonthFrom === state.defaultMonth
+    && state.selectedMonthTo === state.defaultMonth
+  );
+}
+
+async function loadAvailableMonths() {
+  try {
+    const params = new URLSearchParams({
+      amount_basis: 'billing',
+      group_by: 'month',
+    });
+    const data = await api(`api/summary.php?${params.toString()}`);
+    const months = (data.items || [])
+      .map((item) => String(item.period_start || '').slice(0, 7))
+      .filter(isMonthValue)
+      .filter((month, index, all) => all.indexOf(month) === index)
+      .sort();
+
+    const previousMonthFrom = state.selectedMonthFrom;
+    const previousMonthTo = state.selectedMonthTo;
+    state.availableMonths = months;
+    state.defaultMonth = months.length === 0 ? '' : months[months.length - 1];
+
+    if (
+      months.includes(previousMonthFrom)
+      && months.includes(previousMonthTo)
+      && previousMonthFrom <= previousMonthTo
+    ) {
+      state.selectedMonthFrom = previousMonthFrom;
+      state.selectedMonthTo = previousMonthTo;
+    } else {
+      setDefaultMonthSelection();
+    }
+
+    renderMonthFilters();
+  } catch (error) {
+    state.availableMonths = [];
+    state.defaultMonth = '';
+    setDefaultMonthSelection();
+    renderMonthFilters();
+    showToast(error.message);
   }
 }
 
 async function refreshData() {
-  await Promise.all([loadSummary(), loadTransactions()]);
-}
-
-async function loadLabels() {
-  try {
-    const data = await api('api/labels.php');
-    state.labels = data.items || [];
-    renderLabelsList();
-  } catch (error) {
-    showToast(error.message);
+  if (state.availableMonths.length === 0) {
+    state.offset = 0;
+    state.transactions = [];
+    state.total = 0;
+    renderSummary([]);
+    renderTransactions();
+    return;
   }
+
+  await Promise.all([loadSummary(), loadTransactions()]);
 }
 
 async function loadSummary() {
   try {
-    const params = queryParams(false);
-    const groupBy = new FormData(elements.filtersForm).get('group_by') || 'month';
-    params.set('group_by', String(groupBy));
+    const params = queryParams({ includeGroupBy: true });
     const data = await api(`api/summary.php?${params.toString()}`);
-    renderSummary(data.items || [], String(groupBy));
+    renderSummary(data.items || []);
   } catch (error) {
     showToast(error.message);
   }
 }
 
-function renderSummary(items, groupBy) {
+function renderSummary(items) {
   const totalAmount = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const maxAmount = Math.max(1, ...items.map((item) => Math.abs(Number(item.amount || 0))));
-
   elements.summaryAmount.textContent = formatCurrency(totalAmount);
-
-  if (items.length === 0) {
-    elements.summaryChart.replaceChildren(createElement('div', { className: 'empty', text: '集計なし' }));
-    return;
-  }
-
-  const rows = items.map((item) => {
-    const row = createElement('div', { className: 'bar-row' });
-    const label = createElement('span', { text: formatPeriod(item.period_start, groupBy) });
-    const track = createElement('div', { className: 'bar-track' });
-    const fill = createElement('div', { className: 'bar-fill' });
-    fill.style.width = `${Math.max(2, Math.round((Math.abs(Number(item.amount || 0)) / maxAmount) * 100))}%`;
-    track.append(fill);
-    const amount = createElement('span', { className: 'number', text: formatCurrency(item.amount) });
-    row.append(label, track, amount);
-    return row;
-  });
-
-  elements.summaryChart.replaceChildren(...rows);
 }
 
 async function loadTransactions() {
   try {
-    const params = queryParams(true);
+    if (state.availableMonths.length === 0) {
+      state.transactions = [];
+      state.total = 0;
+      state.offset = 0;
+      renderTransactions();
+      return;
+    }
+
+    const params = queryParams({ includePaging: true });
     const data = await api(`api/transactions.php?${params.toString()}`);
     state.transactions = data.items || [];
     state.total = Number(data.total || 0);
@@ -430,7 +628,7 @@ function renderTransactions() {
 
   if (state.transactions.length === 0) {
     const row = createElement('tr');
-    const cell = createElement('td', { className: 'empty', text: '明細なし', attrs: { colspan: state.loggedIn ? 16 : 15 } });
+    const cell = createElement('td', { className: 'empty', text: '明細なし', attrs: { colspan: 14 } });
     row.append(cell);
     elements.transactionsBody.replaceChildren(row);
     return;
@@ -452,162 +650,51 @@ function renderTransactions() {
     appendCell(row, '当月お支払日', formatDate(transaction.statement_payment_on));
     appendCell(row, '計上日', formatDate(transaction.budget_date));
     appendCell(row, '計上額', formatCurrency(transaction.budget_amount), 'number');
-
-    const labelsCell = createElement('td', { attrs: { 'data-label': 'ラベル' } });
-    labelsCell.append(renderTransactionLabels(transaction));
-    row.append(labelsCell);
-
-    if (state.loggedIn) {
-      const adminCell = createElement('td', { attrs: { 'data-label': '管理' } });
-      adminCell.append(renderTransactionAdmin(transaction));
-      row.append(adminCell);
-    }
-
     return row;
   });
 
   elements.transactionsBody.replaceChildren(...rows);
 }
 
-function renderTransactionLabels(transaction) {
-  const container = createElement('div', { className: 'chips' });
-  const labels = transaction.labels || [];
-  if (labels.length === 0) {
-    container.append(createElement('span', { className: 'muted', text: '-' }));
-    return container;
-  }
-
-  for (const label of labels) {
-    const chip = createElement('span', { className: 'chip' });
-    chip.style.color = label.color || '#2563eb';
-    chip.append(createElement('span', { text: label.name }));
-
-    if (state.loggedIn) {
-      const removeButton = createElement('button', {
-        text: '×',
-        attrs: { type: 'button', 'aria-label': `${label.name}を外す` },
-      });
-      removeButton.addEventListener('click', () => unassignLabel(transaction.id, label.id));
-      chip.append(removeButton);
-    }
-
-    container.append(chip);
-  }
-
-  return container;
-}
-
-function renderTransactionAdmin(transaction) {
-  const container = createElement('div', { className: 'admin-cell' });
-  const statuses = [];
-  if (transaction.deleted_at) {
-    statuses.push(['削除済み', 'deleted']);
-  }
-  if (transaction.superseded_at) {
-    statuses.push(['差替済み', 'superseded']);
-  }
-  if (transaction.import_deleted_at) {
-    statuses.push(['取込削除', 'deleted']);
-  }
-  if (statuses.length === 0) {
-    statuses.push(['有効', '']);
-  }
-
-  for (const [text, modifier] of statuses) {
-    const status = createElement('span', { className: modifier ? `status ${modifier}` : 'status', text });
-    container.append(status);
-  }
-
-  const assignRow = createElement('div', { className: 'admin-cell' });
-  const select = createElement('select');
-  select.append(createElement('option', { text: 'ラベルを選択', attrs: { value: '' } }));
-  for (const label of state.labels) {
-    select.append(createElement('option', { text: label.name, attrs: { value: label.id } }));
-  }
-  const assignButton = createElement('button', { text: '付与', attrs: { type: 'button' } });
-  assignButton.disabled = state.labels.length === 0;
-  assignButton.addEventListener('click', () => {
-    if (select.value) {
-      assignLabel(transaction.id, select.value);
-    }
-  });
-  assignRow.append(select, assignButton);
-  container.append(assignRow);
-
-  const actionButton = createElement('button', {
-    className: transaction.deleted_at ? 'secondary' : 'danger',
-    text: transaction.deleted_at ? '復元' : '削除',
-    attrs: { type: 'button' },
-  });
-  actionButton.addEventListener('click', () => {
-    if (transaction.deleted_at) {
-      restoreTransaction(transaction.id);
-    } else {
-      deleteTransaction(transaction.id);
-    }
-  });
-  container.append(actionButton);
-
-  return container;
-}
-
-async function assignLabel(transactionId, labelId) {
-  try {
-    await api('api/labels.php?action=assign', {
-      method: 'POST',
-      json: { transaction_id: transactionId, label_id: labelId },
-    });
-    await refreshAll();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function unassignLabel(transactionId, labelId) {
-  try {
-    await api(`api/labels.php?action=unassign&transaction_id=${encodeURIComponent(transactionId)}&label_id=${encodeURIComponent(labelId)}`, {
-      method: 'DELETE',
-    });
-    await refreshAll();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function deleteTransaction(id) {
-  if (!window.confirm('この明細を削除しますか。')) {
-    return;
-  }
-
-  try {
-    await api(`api/transactions.php?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await refreshAll();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function restoreTransaction(id) {
-  try {
-    await api(`api/transactions.php?action=restore&id=${encodeURIComponent(id)}`, { method: 'POST' });
-    await refreshAll();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
 async function loadImports() {
   try {
-    const data = await api('api/imports.php');
+    const params = new URLSearchParams({
+      limit: String(state.importsLimit),
+      offset: String(state.importsOffset),
+    });
+    const data = await api(`api/imports.php?${params.toString()}`);
     state.imports = data.items || [];
+    state.importsTotal = Number(data.total || 0);
+    state.importsLimit = Number(data.limit || state.importsLimit);
+    state.importsOffset = Number(data.offset || state.importsOffset);
+
+    if (state.imports.length === 0 && state.importsTotal > 0 && state.importsOffset >= state.importsTotal) {
+      state.importsOffset = Math.max(0, state.importsOffset - state.importsLimit);
+      await loadImports();
+      return;
+    }
+
     renderImports();
   } catch (error) {
+    if (error.status === 401) {
+      state.loggedIn = false;
+      renderAuth();
+      showLoginDialog();
+      return;
+    }
+
     showToast(error.message);
   }
 }
 
 function renderImports() {
-  if (!state.loggedIn || state.imports.length === 0) {
+  const start = state.importsTotal === 0 ? 0 : state.importsOffset + 1;
+  const end = Math.min(state.importsTotal, state.importsOffset + state.imports.length);
+  elements.importsResultCount.textContent = `${start}-${end} / ${state.importsTotal}件`;
+  elements.prevImportsPageButton.disabled = state.importsOffset <= 0;
+  elements.nextImportsPageButton.disabled = state.importsOffset + state.importsLimit >= state.importsTotal;
+
+  if (state.imports.length === 0) {
     const row = createElement('tr');
     const cell = createElement('td', { className: 'empty', text: '取込履歴なし', attrs: { colspan: 9 } });
     row.append(cell);
@@ -626,8 +713,8 @@ function renderImports() {
     appendCell(row, '差替', item.superseded_count, 'number');
     const statusCell = createElement('td', { attrs: { 'data-label': '状態' } });
     statusCell.append(createElement('span', {
-      className: item.deleted_at ? 'status deleted' : 'status',
-      text: item.deleted_at ? '削除済み' : '有効',
+      className: 'status',
+      text: '有効',
     }));
     row.append(statusCell);
 
@@ -637,7 +724,6 @@ function renderImports() {
       text: '削除',
       attrs: { type: 'button' },
     });
-    button.disabled = Boolean(item.deleted_at);
     button.addEventListener('click', () => deleteImport(item.id));
     actionCell.append(button);
     row.append(actionCell);
@@ -654,71 +740,41 @@ async function deleteImport(id) {
 
   try {
     await api(`api/imports.php?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await refreshAll();
+    await loadImports();
   } catch (error) {
     showToast(error.message);
   }
 }
 
-function renderLabelsList() {
-  if (!state.loggedIn) {
-    elements.labelsList.replaceChildren();
-    return;
-  }
-
-  if (state.labels.length === 0) {
-    elements.labelsList.replaceChildren(createElement('div', { className: 'empty', text: 'ラベルなし' }));
-    return;
-  }
-
-  const rows = state.labels.map((label) => {
-    const row = createElement('div', { className: 'label-row' });
-    const name = createElement('input', { attrs: { type: 'text', maxlength: '80' } });
-    name.value = label.name;
-    const color = createElement('input', { attrs: { type: 'color' } });
-    color.value = label.color || '#2563eb';
-    const count = createElement('span', { className: 'status', text: `${label.transaction_count}件` });
-    const save = createElement('button', { text: '保存', attrs: { type: 'button' } });
-    save.addEventListener('click', () => updateLabel(label.id, name.value, color.value));
-    const remove = createElement('button', { className: 'danger', text: '削除', attrs: { type: 'button' } });
-    remove.addEventListener('click', () => deleteLabel(label.id));
-    row.append(name, color, count, save, remove);
-    return row;
-  });
-
-  elements.labelsList.replaceChildren(...rows);
+async function initTransactionsPage() {
+  bindTransactionsElements();
+  bindTransactionsEvents();
+  await loadSession();
+  await loadAvailableMonths();
+  await refreshData();
 }
 
-async function updateLabel(id, name, color) {
-  try {
-    await api(`api/labels.php?id=${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      json: { name, color },
-    });
-    await refreshAll();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
+async function initAdminPage() {
+  bindAdminElements();
+  bindAdminEvents();
+  await loadSession();
 
-async function deleteLabel(id) {
-  if (!window.confirm('このラベルを削除しますか。')) {
-    return;
-  }
-
-  try {
-    await api(`api/labels.php?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await refreshAll();
-  } catch (error) {
-    showToast(error.message);
+  if (state.loggedIn) {
+    await loadImports();
+  } else {
+    showLoginDialog();
   }
 }
 
 async function init() {
-  bindElements();
-  bindEvents();
-  await loadSession();
-  await refreshAll();
+  bindCommonElements();
+  bindCommonEvents();
+
+  if (state.page === 'admin') {
+    await initAdminPage();
+  } else {
+    await initTransactionsPage();
+  }
 }
 
 init();

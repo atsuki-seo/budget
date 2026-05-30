@@ -101,11 +101,6 @@ input[type="checkbox"] {
   width: auto;
 }
 
-input[type="color"] {
-  width: 48px;
-  padding: 3px;
-}
-
 h1,
 h2,
 p {
@@ -192,7 +187,7 @@ h2 {
 
 .filters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
   gap: 12px;
   align-items: end;
 }
@@ -240,62 +235,9 @@ label span {
   overflow-wrap: anywhere;
 }
 
-.bar-list {
-  display: grid;
-  gap: 8px;
-}
-
-.bar-row {
-  display: grid;
-  grid-template-columns: minmax(92px, 128px) minmax(140px, 1fr) minmax(88px, auto);
-  gap: 10px;
-  align-items: center;
-  min-height: 30px;
-}
-
-.bar-track {
-  min-width: 0;
-  height: 12px;
-  border-radius: 999px;
-  background: var(--surface-strong);
-  overflow: hidden;
-}
-
-.bar-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--primary), var(--success));
-}
-
-.admin-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
-  gap: 16px;
-}
-
 .stack {
   display: grid;
   gap: 10px;
-}
-
-.label-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 8px;
-  align-items: end;
-}
-
-.label-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.label-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
-  gap: 8px;
-  align-items: center;
 }
 
 .table-header {
@@ -364,51 +306,6 @@ td.wrap-cell {
   text-align: right;
 }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 140px;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 180px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  padding: 2px 8px;
-  color: var(--primary);
-  background: #f8fbff;
-  font-size: 0.78rem;
-}
-
-.chip span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chip button {
-  min-height: 0;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  line-height: 1;
-}
-
-.admin-cell {
-  display: grid;
-  min-width: 190px;
-  gap: 6px;
-}
-
-.admin-cell select {
-  min-width: 150px;
-}
-
 .status {
   display: inline-block;
   border-radius: 999px;
@@ -472,11 +369,7 @@ dialog::backdrop {
 
 @media (max-width: 1180px) {
   .filters {
-    grid-template-columns: repeat(4, minmax(130px, 1fr));
-  }
-
-  .admin-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 }
 
@@ -510,8 +403,7 @@ dialog::backdrop {
   }
 
   .filters,
-  .summary-grid,
-  .label-row {
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 
@@ -525,59 +417,13 @@ dialog::backdrop {
     gap: 10px;
   }
 
-  .stack button,
-  .label-row button {
+  .stack button {
     width: 100%;
   }
 
   .metric {
     min-width: 0;
     padding: 12px;
-  }
-
-  .bar-row {
-    grid-template-columns: 1fr;
-    gap: 6px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .bar-row:last-child {
-    border-bottom: 0;
-  }
-
-  .bar-row > span:first-child {
-    order: 1;
-    font-weight: 700;
-  }
-
-  .bar-row .number {
-    order: 2;
-  }
-
-  .bar-track {
-    order: 3;
-    width: 100%;
-  }
-
-  .bar-row .number {
-    text-align: left;
-  }
-
-  .label-form {
-    grid-template-columns: minmax(0, 1fr) 52px;
-  }
-
-  .label-form button {
-    grid-column: 1 / -1;
-  }
-
-  .label-row {
-    align-items: stretch;
-  }
-
-  .label-row input[type="color"] {
-    width: 52px;
   }
 
   .section-header {
@@ -661,29 +507,12 @@ dialog::backdrop {
     max-width: none;
   }
 
-  td[data-label="ラベル"],
-  td[data-label="管理"],
   td.empty {
     grid-template-columns: 1fr;
   }
 
   td.empty::before {
     content: none;
-  }
-
-  .chips,
-  .admin-cell {
-    min-width: 0;
-  }
-
-  .chip {
-    max-width: 100%;
-  }
-
-  .admin-cell select,
-  .admin-cell button {
-    min-width: 0;
-    width: 100%;
   }
 
   dialog {

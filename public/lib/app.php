@@ -331,18 +331,6 @@ function budget_transaction_filter_sql(array &$params, bool $includeDeleted, str
         $params[] = budget_like_pattern($query);
     }
 
-    $labelId = $_GET['label_id'] ?? '';
-    if (is_string($labelId) && $labelId !== '') {
-        $id = budget_required_id($labelId);
-        $where[] = 'EXISTS (
-            SELECT 1
-            FROM transaction_labels tl_filter
-            WHERE tl_filter.transaction_id = t.id
-              AND tl_filter.label_id = ?
-        )';
-        $params[] = $id;
-    }
-
     $dateFrom = budget_optional_date_param('date_from');
     if ($dateFrom !== null) {
         $where[] = "$dateColumn >= ?";
@@ -772,37 +760,4 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
         }
         throw $exception;
     }
-}
-
-function budget_fetch_transaction_labels(PDO $pdo, array $transactionIds): array
-{
-    if ($transactionIds === []) {
-        return [];
-    }
-
-    $ids = array_values(array_unique(array_map('intval', $transactionIds)));
-    $placeholders = implode(',', array_fill(0, count($ids), '?'));
-    $stmt = $pdo->prepare(
-        "SELECT tl.transaction_id, l.id, l.name, l.color
-         FROM transaction_labels tl
-         JOIN labels l ON l.id = tl.label_id
-         WHERE tl.transaction_id IN ($placeholders)
-         ORDER BY l.name ASC"
-    );
-    foreach ($ids as $index => $id) {
-        $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
-    }
-    $stmt->execute();
-
-    $labelsByTransaction = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $transactionId = (int)$row['transaction_id'];
-        $labelsByTransaction[$transactionId][] = [
-            'id' => (int)$row['id'],
-            'name' => $row['name'],
-            'color' => $row['color'],
-        ];
-    }
-
-    return $labelsByTransaction;
 }

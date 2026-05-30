@@ -71,11 +71,6 @@ try {
         $stmt->execute($params);
         $items = $stmt->fetchAll();
 
-        $transactionIds = array_map(static function (array $row): int {
-            return (int)$row['id'];
-        }, $items);
-        $labelsByTransaction = budget_fetch_transaction_labels($pdo, $transactionIds);
-
         foreach ($items as &$item) {
             $id = (int)$item['id'];
             $item['id'] = $id;
@@ -88,7 +83,6 @@ try {
             $item['adjustment_amount'] = (int)$item['adjustment_amount'];
             $item['budget_amount'] = (int)$item['budget_amount'];
             $item['source_row_number'] = (int)$item['source_row_number'];
-            $item['labels'] = $labelsByTransaction[$id] ?? [];
 
             if (!$isAdmin) {
                 unset(

@@ -8,13 +8,14 @@
     <link rel="stylesheet" href="assets/app.css">
     <script type="module" src="assets/app.js"></script>
   </head>
-  <body>
+  <body data-page="transactions">
     <header class="topbar">
       <div>
         <h1>家計簿</h1>
       </div>
       <div class="topbar-actions">
-        <button id="loginButton" type="button">管理ログイン</button>
+        <button id="loginButton" type="button">ログイン</button>
+        <button id="adminButton" class="secondary" type="button" hidden>管理画面</button>
         <button id="logoutButton" class="secondary" type="button" hidden>ログアウト</button>
       </div>
     </header>
@@ -25,32 +26,17 @@
           <h2 id="filtersHeading">検索条件</h2>
           <div class="filters-actions">
             <button id="filtersToggleButton" class="secondary filter-toggle" type="button" aria-expanded="true" aria-controls="filtersForm">条件を隠す</button>
-            <button id="resetFiltersButton" class="secondary" type="button">リセット</button>
+            <button id="resetFiltersButton" class="secondary" type="button" hidden>リセット</button>
           </div>
         </div>
         <form id="filtersForm" class="filters">
           <label>
-            <span>計上基準</span>
-            <select name="amount_basis">
-              <option value="billing" selected>支払日/当月支払金額</option>
-              <option value="usage">利用日/利用金額</option>
-            </select>
+            <span>開始月</span>
+            <select name="date_from_month"></select>
           </label>
           <label>
-            <span>集計</span>
-            <select name="group_by">
-              <option value="month" selected>月</option>
-              <option value="week">週</option>
-              <option value="day">日</option>
-            </select>
-          </label>
-          <label>
-            <span>開始日</span>
-            <input name="date_from" type="date">
-          </label>
-          <label>
-            <span>終了日</span>
-            <input name="date_to" type="date">
+            <span>終了月</span>
+            <select name="date_to_month"></select>
           </label>
         </form>
       </section>
@@ -60,55 +46,6 @@
           <span class="metric-label">合計</span>
           <strong id="summaryAmount">-</strong>
         </div>
-      </section>
-
-      <section class="panel" aria-labelledby="chartHeading">
-        <div class="section-header">
-          <h2 id="chartHeading">推移</h2>
-        </div>
-        <div id="summaryChart" class="bar-list"></div>
-      </section>
-
-      <section id="adminPanel" class="admin-grid" hidden>
-        <section class="panel" aria-labelledby="importHeading">
-          <div class="section-header">
-            <h2 id="importHeading">CSV取込</h2>
-          </div>
-          <form id="importForm" class="stack">
-            <input id="csvFile" name="csv" type="file" accept=".csv,text/csv">
-            <button type="submit">アップロード</button>
-          </form>
-          <div class="table-wrap compact">
-            <table>
-              <thead>
-                <tr>
-                  <th>取込日時</th>
-                  <th>支払日</th>
-                  <th>CSV</th>
-                  <th>件数</th>
-                  <th>追加</th>
-                  <th>更新</th>
-                  <th>差替</th>
-                  <th>状態</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="importsBody"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel" aria-labelledby="labelsHeading">
-          <div class="section-header">
-            <h2 id="labelsHeading">ラベル</h2>
-          </div>
-          <form id="labelForm" class="label-form">
-            <input name="name" type="text" maxlength="80" autocomplete="off" placeholder="ラベル名">
-            <input name="color" type="color" value="#2563eb" aria-label="ラベル色">
-            <button type="submit">追加</button>
-          </form>
-          <div id="labelsList" class="label-list"></div>
-        </section>
       </section>
 
       <section class="panel" aria-labelledby="transactionsHeading">
@@ -140,8 +77,6 @@
                 <th>当月お支払日</th>
                 <th>計上日</th>
                 <th class="number">計上額</th>
-                <th>ラベル</th>
-                <th id="adminHeader" hidden>管理</th>
               </tr>
             </thead>
             <tbody id="transactionsBody"></tbody>
@@ -152,7 +87,7 @@
 
     <dialog id="loginDialog">
       <form id="loginForm" method="dialog" class="dialog-form">
-        <h2>管理ログイン</h2>
+        <h2>ログイン</h2>
         <label>
           <span>パスワード</span>
           <input name="password" type="password" autocomplete="current-password" required>

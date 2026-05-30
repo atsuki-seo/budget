@@ -10,22 +10,46 @@ try {
 
     if ($method === 'GET') {
         $pdo = budget_pdo();
-        $limit = budget_int_param('limit', 100, 1, 200);
+        $limit = budget_int_param('limit', 5, 1, 200);
+        $offset = budget_int_param('offset', 0, 0, 1000000);
+
+        $totalStmt = $pdo->query(
+            'SELECT COUNT(*)
+             FROM (
+                SELECT statement_payment_on
+                FROM imports
+                WHERE deleted_at IS NULL
+                GROUP BY statement_payment_on
+             ) payment_dates'
+        );
+        $total = (int)$totalStmt->fetchColumn();
+
         $stmt = $pdo->query(
             "SELECT
-                id,
-                statement_payment_on,
-                source_filename,
-                row_count,
-                inserted_count,
-                updated_count,
-                unchanged_count,
-                superseded_count,
-                imported_at,
-                deleted_at
-             FROM imports
-             ORDER BY imported_at DESC, id DESC
-             LIMIT $limit"
+                i.id,
+                i.statement_payment_on,
+                i.source_filename,
+                i.row_count,
+                i.inserted_count,
+                i.updated_count,
+                i.unchanged_count,
+                i.superseded_count,
+                i.imported_at,
+                i.deleted_at
+             FROM imports i
+             WHERE i.deleted_at IS NULL
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM imports newer
+                    WHERE newer.deleted_at IS NULL
+                      AND newer.statement_payment_on = i.statement_payment_on
+                      AND (
+                        newer.imported_at > i.imported_at
+                        OR (newer.imported_at = i.imported_at AND newer.id > i.id)
+                      )
+               )
+             ORDER BY i.imported_at DESC, i.id DESC
+             LIMIT $limit OFFSET $offset"
         );
 
         $items = [];
@@ -44,7 +68,12 @@ try {
             ];
         }
 
-        budget_json_response(['items' => $items]);
+        budget_json_response([
+            'items' => $items,
+            'total' => $total,
+            'limit' => $limit,
+            'offset' => $offset,
+        ]);
     }
 
     if ($method === 'POST') {
