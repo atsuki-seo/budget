@@ -1,0 +1,152 @@
+name: Deploy to Xserver
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xserver-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy public directory
+    runs-on: ubuntu-latest
+    environment: xserver-production
+    env:
+      XSERVER_HOST: ${{ vars.XSERVER_HOST }}
+      XSERVER_PORT: ${{ vars.XSERVER_PORT }}
+      XSERVER_USER: ${{ vars.XSERVER_USER }}
+      XSERVER_TARGET_DIR: ${{ vars.XSERVER_TARGET_DIR }}
+      PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            XSERVER_HOST
+            XSERVER_PORT
+            XSERVER_USER
+            XSERVER_TARGET_DIR
+            PUBLIC_URL
+          )
+
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name is required"
+              exit 1
+            fi
+          done
+
+          if [[ ! "$XSERVER_PORT" =~ ^[0-9]+$ ]]; then
+            echo "::error::XSERVER_PORT must be numeric"
+            exit 1
+          fi
+
+          XSERVER_TARGET_DIR="${XSERVER_TARGET_DIR%/}"
+          PUBLIC_URL="${PUBLIC_URL%/}"
+
+          if [[ ! "$XSERVER_TARGET_DIR" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error::XSERVER_TARGET_DIR contains unsupported characters"
+            exit 1
+          fi
+
+          if [[ "$XSERVER_TARGET_DIR" != */public_html/budget ]]; then
+            echo "::error::XSERVER_TARGET_DIR must end with public_html/budget"
+            exit 1
+          fi
+
+          if [[ "$PUBLIC_URL" != https://* ]]; then
+            echo "::error::PUBLIC_URL must use https"
+            exit 1
+          fi
+
+          {
+            echo "XSERVER_TARGET_DIR=$XSERVER_TARGET_DIR"
+            echo "PUBLIC_URL=$PUBLIC_URL"
+          } >> "$GITHUB_ENV"
+
+      - name: Install SSH credentials
+        shell: bash
+        env:
+          XSERVER_SSH_KEY: ${{ secrets.XSERVER_SSH_KEY }}
+          XSERVER_KNOWN_HOSTS: ${{ secrets.XSERVER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${XSERVER_SSH_KEY:-}" ]]; then
+            echo "::error::XSERVER_SSH_KEY is required"
+            exit 1
+          fi
+
+          if [[ -z "${XSERVER_KNOWN_HOSTS:-}" ]]; then
+            echo "::error::XSERVER_KNOWN_HOSTS is required"
+            exit 1
+          fi
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$XSERVER_SSH_KEY" > "$HOME/.ssh/xserver_actions_key"
+          printf '%s\n' "$XSERVER_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/xserver_actions_key" "$HOME/.ssh/known_hosts"
+
+      - name: Preflight remote target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          remote="${XSERVER_USER}@${XSERVER_HOST}"
+          ssh_opts=(
+            -i "$HOME/.ssh/xserver_actions_key"
+            -p "$XSERVER_PORT"
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=yes
+          )
+
+          ssh "${ssh_opts[@]}" "$remote" \
+            "mkdir -p -- \"$XSERVER_TARGET_DIR\" && test -d -- \"$XSERVER_TARGET_DIR\" && command -v rsync >/dev/null"
+
+      - name: Deploy public directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rsync -az --delete --itemize-changes \
+            -e "ssh -i $HOME/.ssh/xserver_actions_key -p $XSERVER_PORT -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes" \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='.ssh/' \
+            --exclude='*.key' \
+            --exclude='*.pem' \
+            --exclude='*.p12' \
+            --exclude='*.pfx' \
+            --exclude='id_*' \
+            --exclude='known_hosts' \
+            --exclude='known_hosts.*' \
+            public/ "${XSERVER_USER}@${XSERVER_HOST}:${XSERVER_TARGET_DIR}/"
+
+      - name: Verify deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          html_body="$(mktemp)"
+          curl -fsSL "$PUBLIC_URL/" -o "$html_body"
+          grep -q "Budget deployment smoke check" "$html_body"
+
+          php_response="$(curl -fsSL "$PUBLIC_URL/health.php")"
+          if [[ "$php_response" != "OK" ]]; then
+            echo "::error::Unexpected health.php response: $php_response"
+            exit 1
+          fi
