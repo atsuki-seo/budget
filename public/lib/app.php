@@ -395,6 +395,17 @@ function budget_hash(array $fields): string
     return hash('sha256', $json);
 }
 
+function budget_normalize_csv_header(string $header): string
+{
+    $header = str_replace("\xEF\xBB\xBF", '', $header);
+    $header = preg_replace('/^\x{FEFF}/u', '', $header);
+    if (!is_string($header)) {
+        throw new InvalidArgumentException('CSV header contains invalid UTF-8.');
+    }
+
+    return trim($header);
+}
+
 function budget_normalize_csv_row(array $row, int $line): array
 {
     $usedOn = budget_parse_csv_date($row['利用日/キャンセル日'], '利用日/キャンセル日', $line);
@@ -473,13 +484,9 @@ function budget_parse_csv_file(string $path, int $maxRows = 5000): array
             throw new InvalidArgumentException('CSV header is missing.');
         }
 
-        if (isset($headers[0])) {
-            $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string)$headers[0]);
-        }
-
         $headerMap = [];
         foreach ($headers as $index => $header) {
-            $header = trim((string)$header);
+            $header = budget_normalize_csv_header((string)$header);
             if ($header === '') {
                 continue;
             }
@@ -493,7 +500,8 @@ function budget_parse_csv_file(string $path, int $maxRows = 5000): array
 
         foreach (BUDGET_REQUIRED_HEADERS as $requiredHeader) {
             if (!array_key_exists($requiredHeader, $headerMap)) {
-                throw new InvalidArgumentException("CSV header $requiredHeader is required.");
+                $detected = implode(', ', array_slice(array_keys($headerMap), 0, 8));
+                throw new InvalidArgumentException("CSV header $requiredHeader is required. Detected headers: $detected");
             }
         }
 
