@@ -115,7 +115,7 @@ jobs:
           )
 
           ssh "${ssh_opts[@]}" "$remote" \
-            "mkdir -p -- \"$XSERVER_TARGET_DIR\" && test -d -- \"$XSERVER_TARGET_DIR\" && command -v rsync >/dev/null"
+            "mkdir -p \"$XSERVER_TARGET_DIR\" && test -d \"$XSERVER_TARGET_DIR\" && command -v rsync >/dev/null"
 
       - name: Deploy public directory
         shell: bash
