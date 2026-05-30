@@ -176,8 +176,8 @@ function bindEvents() {
     try {
       await api('api/session.php', { method: 'DELETE' });
       state.loggedIn = false;
-      state.csrfToken = '';
       state.offset = 0;
+      await loadSession();
       renderAuth();
       await refreshAll();
       showToast('ログアウトしました。');
