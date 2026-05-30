@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS transactions (
     payment_method VARCHAR(100) NOT NULL,
     payment_category VARCHAR(100) NOT NULL,
     usage_amount INT NOT NULL,
-    total_amount INT NOT NULL,
     billing_amount INT NOT NULL,
     carried_forward_amount INT NOT NULL,
     adjustment_amount INT NOT NULL,

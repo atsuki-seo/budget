@@ -10,7 +10,6 @@ const BUDGET_REQUIRED_HEADERS = [
     '支払区分',
     '利用金額',
     '手数料',
-    '支払総額',
     '当月支払金額',
     '翌月以降繰越金額',
     '調整額',
@@ -360,7 +359,6 @@ function budget_normalize_csv_row(array $row, int $line): array
     }
 
     $usageAmount = budget_parse_csv_amount($row['利用金額'], '利用金額', $line);
-    $totalAmount = budget_parse_csv_amount($row['支払総額'], '支払総額', $line);
     $billingAmount = budget_parse_csv_amount($row['当月支払金額'], '当月支払金額', $line);
     $carriedForwardAmount = budget_parse_csv_amount($row['翌月以降繰越金額'], '翌月以降繰越金額', $line);
     $adjustmentAmount = budget_parse_csv_amount($row['調整額'], '調整額', $line);
@@ -373,7 +371,6 @@ function budget_normalize_csv_row(array $row, int $line): array
         'payment_method' => $paymentMethod,
         'payment_category' => $paymentCategory,
         'usage_amount' => $usageAmount,
-        'total_amount' => $totalAmount,
         'billing_amount' => $billingAmount,
         'carried_forward_amount' => $carriedForwardAmount,
         'adjustment_amount' => $adjustmentAmount,
@@ -503,9 +500,9 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
         $insertTransaction = $pdo->prepare(
             'INSERT INTO transactions
                 (import_id, statement_payment_on, used_on, merchant, card_user, payment_method, payment_category,
-                 usage_amount, total_amount, billing_amount, carried_forward_amount, adjustment_amount)
+                 usage_amount, billing_amount, carried_forward_amount, adjustment_amount)
              VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
         foreach ($parsed['rows'] as $row) {
@@ -519,7 +516,6 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
                 $fields['payment_method'],
                 $fields['payment_category'],
                 $fields['usage_amount'],
-                $fields['total_amount'],
                 $fields['billing_amount'],
                 $fields['carried_forward_amount'],
                 $fields['adjustment_amount'],

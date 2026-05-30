@@ -59,8 +59,14 @@ test_assert($parsed['rows'][0]['fields']['statement_payment_on'] === '2026-04-27
 test_assert($parsed['rows'][0]['fields']['usage_amount'] === 111111, 'usage amount is parsed');
 test_assert($parsed['rows'][1]['fields']['billing_amount'] === 22222, 'billing amount is parsed');
 test_assert(!array_key_exists('fee_amount', $parsed['rows'][0]['fields']), 'fee amount is not returned');
+test_assert(!array_key_exists('total_amount', $parsed['rows'][0]['fields']), 'total amount is not returned');
 test_assert(!array_key_exists('budget_date', $parsed['rows'][0]['fields']), 'budget date is not returned');
 test_assert(!array_key_exists('budget_amount', $parsed['rows'][0]['fields']), 'budget amount is not returned');
+
+$withoutTotalHeader = '"利用日/キャンセル日","利用店名・商品名","利用者","決済方法","支払区分","利用金額","手数料","当月支払金額","翌月以降繰越金額","調整額","当月お支払日"' . "\n"
+    . '"2026/3/1","DUMMY_CARD_MERCHANT_A","本人","PayPayカード ゴールド","1回","111111","0","111111","0","0","2026/4/27"' . "\n";
+$withoutTotal = test_parse($withoutTotalHeader);
+test_assert($withoutTotal['rows'][0]['fields']['billing_amount'] === 111111, 'total amount header is optional');
 
 $missingHeader = '"利用日/キャンセル日","利用店名・商品名","利用者","決済方法","支払区分","利用金額","手数料","支払総額","当月支払金額","翌月以降繰越金額","当月お支払日"' . "\n"
     . '"2026/3/1","DUMMY_CARD_MERCHANT_A","本人","PayPayカード ゴールド","1回","111111","0","111111","111111","0","2026/4/27"' . "\n";

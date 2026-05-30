@@ -30,7 +30,6 @@ try {
                 t.payment_method,
                 t.payment_category,
                 t.usage_amount,
-                t.total_amount,
                 t.billing_amount,
                 t.carried_forward_amount,
                 t.adjustment_amount
@@ -45,7 +44,6 @@ try {
     foreach ($items as &$item) {
         $item['id'] = (int)$item['id'];
         $item['usage_amount'] = (int)$item['usage_amount'];
-        $item['total_amount'] = (int)$item['total_amount'];
         $item['billing_amount'] = (int)$item['billing_amount'];
         $item['carried_forward_amount'] = (int)$item['carried_forward_amount'];
         $item['adjustment_amount'] = (int)$item['adjustment_amount'];
