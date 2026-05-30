@@ -2,13 +2,14 @@
 
 PHP + MySQL household budget app for `https://example.com/budget`.
 
-The app exposes read-only transaction views publicly. Admin-only changes, including CSV import, transaction delete/restore, import deletion, and label editing, require the single admin password configured outside the web root.
+The app exposes read-only transaction views publicly. Admin-only changes, including CSV import, transaction delete/restore, and import deletion, require the single admin password configured outside the web root.
 
 ## Repository Layout
 
 ```text
 database/schema.sql      MySQL/MariaDB schema
 public/                  Files mirrored to Xserver public_html/budget
+public/admin/            Admin screen for CSV import
 public/api/              JSON API endpoints
 public/assets/           Vanilla CSS/JavaScript
 public/lib/app.php       Shared PHP runtime helpers
@@ -33,9 +34,9 @@ Public read API:
 
 - `GET /api/transactions.php`
 - `GET /api/summary.php?group_by=day|week|month`
-- `GET /api/labels.php`
 
 `GET /api/transactions.php` defaults to `limit=100`, `sort=used_on`, and `dir=desc`.
+The public `/budget/` UI fixes the transaction view to billing month (`amount_basis=billing`, `group_by=month`) and exposes only start/end month selectors for months with data.
 
 Admin API:
 
@@ -47,13 +48,10 @@ Admin API:
 - `DELETE /api/imports.php?id=...`
 - `DELETE /api/transactions.php?id=...`
 - `POST /api/transactions.php?action=restore&id=...`
-- `POST /api/labels.php`
-- `PUT /api/labels.php?id=...`
-- `DELETE /api/labels.php?id=...`
-- `POST /api/labels.php?action=assign`
-- `DELETE /api/labels.php?action=unassign&transaction_id=...&label_id=...`
 
 All API responses are JSON with `Cache-Control: no-store`. Mutating admin requests require both an authenticated PHP session and the `X-CSRF-Token` header.
+
+`GET /api/imports.php` defaults to `limit=5`, supports `offset`, excludes soft-deleted imports, and returns only the latest import for each `statement_payment_on`.
 
 ## Initial Xserver Setup
 
@@ -101,9 +99,9 @@ For local HTTP-only development, set `'cookie_secure' => false` in a local ignor
 
 ## CSV Import
 
-1. Open `https://example.com/budget`.
-2. Click `管理ログイン`.
-3. Upload the card-detail CSV from the `CSV取込` panel.
+1. Open `https://example.com/budget/admin/`.
+2. Enter the admin password in the login dialog.
+3. Upload the card-detail CSV from the `CSV取込` screen.
 
 The importer validates CSV headers and values, not file extensions. Each CSV must contain exactly one `当月お支払日`.
 
@@ -120,6 +118,8 @@ The budget default amount/date is:
 - `支払区分 = 1回`: `利用日/キャンセル日` and `利用金額`
 - `支払区分 = 均等 ...`: `当月お支払日` and `当月支払金額`
 - Other non-`1回` categories use the same payment-date basis.
+
+Label tables remain in the schema for existing data safety, but the label UI and label API are no longer exposed.
 
 ## Deployment
 
