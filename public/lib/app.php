@@ -403,6 +403,11 @@ function budget_normalize_csv_header(string $header): string
         throw new InvalidArgumentException('CSV header contains invalid UTF-8.');
     }
 
+    $header = trim($header);
+    if (strlen($header) >= 2 && $header[0] === '"' && substr($header, -1) === '"') {
+        $header = substr($header, 1, -1);
+    }
+
     return trim($header);
 }
 
