@@ -12,7 +12,6 @@
     <header class="topbar">
       <div>
         <h1>家計簿</h1>
-        <p id="sessionStatus" class="muted">読み込み中</p>
       </div>
       <div class="topbar-actions">
         <button id="loginButton" type="button">管理ログイン</button>
@@ -33,9 +32,8 @@
           <label>
             <span>計上基準</span>
             <select name="amount_basis">
-              <option value="budget" selected>家計簿標準</option>
+              <option value="billing" selected>支払日/当月支払金額</option>
               <option value="usage">利用日/利用金額</option>
-              <option value="billing">支払日/当月支払金額</option>
             </select>
           </label>
           <label>
@@ -54,21 +52,6 @@
             <span>終了日</span>
             <input name="date_to" type="date">
           </label>
-          <label>
-            <span>店名</span>
-            <input name="q" type="search" maxlength="80" autocomplete="off">
-          </label>
-          <label>
-            <span>ラベル</span>
-            <select id="labelFilter" name="label_id">
-              <option value="">すべて</option>
-            </select>
-          </label>
-          <label id="includeDeletedLabel" class="checkbox-line" hidden>
-            <input name="include_deleted" type="checkbox" value="1">
-            <span>削除済みを含む</span>
-          </label>
-          <button type="submit">検索</button>
         </form>
       </section>
 
@@ -76,14 +59,6 @@
         <div class="metric">
           <span class="metric-label">合計</span>
           <strong id="summaryAmount">-</strong>
-        </div>
-        <div class="metric">
-          <span class="metric-label">件数</span>
-          <strong id="summaryCount">-</strong>
-        </div>
-        <div class="metric">
-          <span class="metric-label">期間数</span>
-          <strong id="summaryPeriods">-</strong>
         </div>
       </section>
 

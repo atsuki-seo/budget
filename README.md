@@ -35,6 +35,8 @@ Public read API:
 - `GET /api/summary.php?group_by=day|week|month`
 - `GET /api/labels.php`
 
+`GET /api/transactions.php` defaults to `limit=100`, `sort=used_on`, and `dir=desc`.
+
 Admin API:
 
 - `GET /api/session.php`
@@ -213,6 +215,7 @@ The public host must have a matching SSL certificate. Keep `PUBLIC_URL` on HTTPS
 Local syntax and parser checks:
 
 ```sh
+node --check public/assets/app.js
 find public tests -name '*.php' -print0 | xargs -0 -n1 php -l
 php tests/csv_parser_test.php
 ```

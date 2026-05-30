@@ -192,7 +192,7 @@ h2 {
 
 .filters {
   display: grid;
-  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
   gap: 12px;
   align-items: end;
 }
@@ -218,7 +218,7 @@ label span {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -525,7 +525,6 @@ dialog::backdrop {
     gap: 10px;
   }
 
-  .filters button[type="submit"],
   .stack button,
   .label-row button {
     width: 100%;

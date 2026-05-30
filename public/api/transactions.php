@@ -30,13 +30,13 @@ try {
             'budget_amount' => 't.budget_amount',
             'created_at' => 't.created_at',
         ];
-        $sort = $_GET['sort'] ?? 'budget_date';
+        $sort = $_GET['sort'] ?? 'used_on';
         if (!is_string($sort) || !isset($sortMap[$sort])) {
-            $sort = 'budget_date';
+            $sort = 'used_on';
         }
 
         $dir = strtolower((string)($_GET['dir'] ?? 'desc')) === 'asc' ? 'ASC' : 'DESC';
-        $limit = budget_int_param('limit', 50, 1, 200);
+        $limit = budget_int_param('limit', 100, 1, 200);
         $offset = budget_int_param('offset', 0, 0, 1000000);
 
         $sql = "SELECT

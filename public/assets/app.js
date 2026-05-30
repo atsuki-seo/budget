@@ -5,7 +5,7 @@ const state = {
   transactions: [],
   imports: [],
   total: 0,
-  limit: 50,
+  limit: 100,
   offset: 0,
   filtersExpanded: true,
 };
@@ -109,20 +109,16 @@ function formatPeriod(value, groupBy) {
 }
 
 function bindElements() {
-  elements.sessionStatus = $('#sessionStatus');
   elements.loginButton = $('#loginButton');
   elements.logoutButton = $('#logoutButton');
   elements.loginDialog = $('#loginDialog');
   elements.loginForm = $('#loginForm');
+  elements.loginPassword = $('#loginForm input[name="password"]');
   elements.cancelLoginButton = $('#cancelLoginButton');
   elements.filtersForm = $('#filtersForm');
   elements.filtersToggleButton = $('#filtersToggleButton');
   elements.resetFiltersButton = $('#resetFiltersButton');
-  elements.labelFilter = $('#labelFilter');
-  elements.includeDeletedLabel = $('#includeDeletedLabel');
   elements.summaryAmount = $('#summaryAmount');
-  elements.summaryCount = $('#summaryCount');
-  elements.summaryPeriods = $('#summaryPeriods');
   elements.summaryChart = $('#summaryChart');
   elements.adminPanel = $('#adminPanel');
   elements.importForm = $('#importForm');
@@ -147,6 +143,9 @@ function bindEvents() {
     } else {
       elements.loginDialog.setAttribute('open', '');
     }
+    window.requestAnimationFrame(() => {
+      elements.loginPassword.focus();
+    });
   });
 
   elements.cancelLoginButton.addEventListener('click', () => {
@@ -166,9 +165,20 @@ function bindEvents() {
       elements.loginDialog.close();
       renderAuth();
       await refreshAll();
-      showToast('ログインしました。');
     } catch (error) {
       showToast(error.message);
+    }
+  });
+
+  elements.loginPassword.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    if (typeof elements.loginForm.requestSubmit === 'function') {
+      elements.loginForm.requestSubmit();
+    } else {
+      elements.loginForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     }
   });
 
@@ -180,13 +190,16 @@ function bindEvents() {
       await loadSession();
       renderAuth();
       await refreshAll();
-      showToast('ログアウトしました。');
     } catch (error) {
       showToast(error.message);
     }
   });
 
-  elements.filtersForm.addEventListener('submit', async (event) => {
+  elements.filtersForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+  });
+
+  elements.filtersForm.addEventListener('change', async (event) => {
     event.preventDefault();
     state.offset = 0;
     await refreshData();
@@ -225,7 +238,6 @@ function bindEvents() {
       elements.importForm.reset();
       state.offset = 0;
       await refreshAll();
-      showToast('CSVを取り込みました。');
     } catch (error) {
       showToast(error.message);
     }
@@ -244,7 +256,6 @@ function bindEvents() {
       });
       elements.labelForm.reset();
       await refreshAll();
-      showToast('ラベルを追加しました。');
     } catch (error) {
       showToast(error.message);
     }
@@ -296,11 +307,9 @@ async function loadSession() {
 }
 
 function renderAuth() {
-  elements.sessionStatus.textContent = state.loggedIn ? '管理モード' : '公開閲覧モード';
   elements.loginButton.hidden = state.loggedIn;
   elements.logoutButton.hidden = !state.loggedIn;
   elements.adminPanel.hidden = !state.loggedIn;
-  elements.includeDeletedLabel.hidden = !state.loggedIn;
   elements.adminHeader.hidden = !state.loggedIn;
 }
 
@@ -308,15 +317,11 @@ function queryParams(includePaging) {
   const formData = new FormData(elements.filtersForm);
   const params = new URLSearchParams();
 
-  for (const key of ['amount_basis', 'date_from', 'date_to', 'q', 'label_id']) {
+  for (const key of ['amount_basis', 'date_from', 'date_to']) {
     const value = formData.get(key);
     if (value !== null && String(value) !== '') {
       params.set(key, String(value));
     }
-  }
-
-  if (formData.get('include_deleted') === '1' && state.loggedIn) {
-    params.set('include_deleted', '1');
   }
 
   if (includePaging) {
@@ -344,29 +349,12 @@ async function refreshData() {
 
 async function loadLabels() {
   try {
-    const selected = elements.labelFilter.value;
     const data = await api('api/labels.php');
     state.labels = data.items || [];
-    renderLabelFilter(selected);
     renderLabelsList();
   } catch (error) {
     showToast(error.message);
   }
-}
-
-function renderLabelFilter(selected) {
-  const options = [createElement('option', { text: 'すべて', attrs: { value: '' } })];
-  for (const label of state.labels) {
-    const option = createElement('option', {
-      text: `${label.name} (${label.transaction_count})`,
-      attrs: { value: label.id },
-    });
-    if (String(label.id) === String(selected)) {
-      option.selected = true;
-    }
-    options.push(option);
-  }
-  elements.labelFilter.replaceChildren(...options);
 }
 
 async function loadSummary() {
@@ -383,12 +371,9 @@ async function loadSummary() {
 
 function renderSummary(items, groupBy) {
   const totalAmount = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const totalCount = items.reduce((sum, item) => sum + Number(item.transaction_count || 0), 0);
   const maxAmount = Math.max(1, ...items.map((item) => Math.abs(Number(item.amount || 0))));
 
   elements.summaryAmount.textContent = formatCurrency(totalAmount);
-  elements.summaryCount.textContent = `${totalCount}件`;
-  elements.summaryPeriods.textContent = `${items.length}件`;
 
   if (items.length === 0) {
     elements.summaryChart.replaceChildren(createElement('div', { className: 'empty', text: '集計なし' }));
