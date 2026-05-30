@@ -126,6 +126,7 @@ jobs:
             -e "ssh -i $HOME/.ssh/xserver_actions_key -p $XSERVER_PORT -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes" \
             --exclude='.env' \
             --exclude='.env.*' \
+            --exclude='budget-config.php' \
             --exclude='.ssh/' \
             --exclude='*.key' \
             --exclude='*.pem' \
@@ -143,7 +144,7 @@ jobs:
 
           html_body="$(mktemp)"
           curl -fsSL "$PUBLIC_URL/" -o "$html_body"
-          grep -q "Budget deployment smoke check" "$html_body"
+          grep -q "家計簿" "$html_body"
 
           php_response="$(curl -fsSL "$PUBLIC_URL/health.php")"
           if [[ "$php_response" != "OK" ]]; then

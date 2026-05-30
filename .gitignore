@@ -4,6 +4,11 @@
 .env
 .env.*
 !.env.example
+budget-config.php
+public/budget-config.php
+
+# Local budget exports
+detail*.csv
 
 # Local SSH material for deployment setup
 .ssh/

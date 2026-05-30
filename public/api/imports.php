@@ -1,0 +1,94 @@
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../lib/app.php';
+
+try {
+    $method = budget_require_method(['GET', 'POST', 'DELETE']);
+    budget_require_admin();
+
+    if ($method === 'GET') {
+        $pdo = budget_pdo();
+        $limit = budget_int_param('limit', 100, 1, 200);
+        $stmt = $pdo->query(
+            "SELECT
+                id,
+                statement_payment_on,
+                source_filename,
+                row_count,
+                inserted_count,
+                updated_count,
+                unchanged_count,
+                superseded_count,
+                imported_at,
+                deleted_at
+             FROM imports
+             ORDER BY imported_at DESC, id DESC
+             LIMIT $limit"
+        );
+
+        $items = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $items[] = [
+                'id' => (int)$row['id'],
+                'statement_payment_on' => $row['statement_payment_on'],
+                'source_filename' => $row['source_filename'],
+                'row_count' => (int)$row['row_count'],
+                'inserted_count' => (int)$row['inserted_count'],
+                'updated_count' => (int)$row['updated_count'],
+                'unchanged_count' => (int)$row['unchanged_count'],
+                'superseded_count' => (int)$row['superseded_count'],
+                'imported_at' => $row['imported_at'],
+                'deleted_at' => $row['deleted_at'],
+            ];
+        }
+
+        budget_json_response(['items' => $items]);
+    }
+
+    if ($method === 'POST') {
+        budget_require_csrf();
+        $pdo = budget_pdo();
+
+        if (!isset($_FILES['csv']) || !is_array($_FILES['csv'])) {
+            throw new InvalidArgumentException('CSV file is required.');
+        }
+
+        $file = $_FILES['csv'];
+        $error = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($error !== UPLOAD_ERR_OK) {
+            throw new InvalidArgumentException('CSV upload failed.');
+        }
+
+        $size = (int)($file['size'] ?? 0);
+        $maxBytes = (int)(budget_config()['max_upload_bytes'] ?? (2 * 1024 * 1024));
+        if ($size <= 0 || $size > $maxBytes) {
+            throw new InvalidArgumentException('CSV file size is invalid.');
+        }
+
+        $tmpName = isset($file['tmp_name']) && is_string($file['tmp_name']) ? $file['tmp_name'] : '';
+        if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+            throw new InvalidArgumentException('CSV upload is invalid.');
+        }
+
+        $originalName = isset($file['name']) && is_string($file['name']) ? $file['name'] : 'uploaded.csv';
+        $result = budget_import_csv($pdo, $tmpName, $originalName);
+
+        budget_json_response(['import' => $result], 201);
+    }
+
+    budget_require_csrf();
+    $pdo = budget_pdo();
+    $id = budget_required_id(isset($_GET['id']) ? (string)$_GET['id'] : null);
+    $stmt = $pdo->prepare(
+        'UPDATE imports
+         SET deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP)
+         WHERE id = ?'
+    );
+    $stmt->execute([$id]);
+
+    budget_json_response(['deleted' => $stmt->rowCount() > 0]);
+} catch (Throwable $exception) {
+    budget_handle_exception($exception);
+}
