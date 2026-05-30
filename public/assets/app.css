@@ -39,6 +39,7 @@ button,
 input,
 select {
   font: inherit;
+  max-width: 100%;
 }
 
 button {
@@ -146,6 +147,11 @@ h2 {
   gap: 8px;
 }
 
+.topbar > div:first-child,
+.topbar-actions {
+  min-width: 0;
+}
+
 .layout {
   width: min(100% - 24px, 1480px);
   margin: 16px auto 32px;
@@ -155,6 +161,7 @@ h2 {
 
 .panel,
 .metric {
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -171,6 +178,16 @@ h2 {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.filters-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-toggle {
+  display: none;
 }
 
 .filters {
@@ -217,8 +234,10 @@ label span {
 }
 
 .metric strong {
+  display: block;
   font-size: 1.35rem;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .bar-list {
@@ -332,6 +351,12 @@ tr:last-child td {
 td.merchant {
   min-width: 220px;
   max-width: 360px;
+  white-space: normal;
+}
+
+td.wrap-cell {
+  max-width: 280px;
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 
@@ -459,35 +484,230 @@ dialog::backdrop {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+    padding: 12px;
   }
 
   .topbar-actions,
+  .filters-actions,
   .pager {
     width: 100%;
   }
 
   .topbar-actions button,
+  .filters-actions button,
   .pager button {
     flex: 1;
   }
 
+  .layout {
+    width: min(100% - 16px, 1480px);
+    margin: 12px auto 24px;
+    gap: 12px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
   .filters,
   .summary-grid,
-  .label-form,
   .label-row {
     grid-template-columns: 1fr;
   }
 
+  .filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .filters {
+    gap: 10px;
+  }
+
+  .filters button[type="submit"],
+  .stack button,
+  .label-row button {
+    width: 100%;
+  }
+
+  .metric {
+    min-width: 0;
+    padding: 12px;
+  }
+
   .bar-row {
     grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .bar-row:last-child {
+    border-bottom: 0;
+  }
+
+  .bar-row > span:first-child {
+    order: 1;
+    font-weight: 700;
+  }
+
+  .bar-row .number {
+    order: 2;
+  }
+
+  .bar-track {
+    order: 3;
+    width: 100%;
   }
 
   .bar-row .number {
     text-align: left;
   }
 
+  .label-form {
+    grid-template-columns: minmax(0, 1fr) 52px;
+  }
+
+  .label-form button {
+    grid-column: 1 / -1;
+  }
+
+  .label-row {
+    align-items: stretch;
+  }
+
+  .label-row input[type="color"] {
+    width: 52px;
+  }
+
   .section-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .table-header {
+    gap: 10px;
+  }
+
+  .table-wrap,
+  .table-wrap.compact {
+    overflow: visible;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+  }
+
+  table {
+    background: transparent;
+    font-size: 0.9rem;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  tr {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: var(--shadow);
+  }
+
+  td {
+    display: grid;
+    grid-template-columns: minmax(86px, 36%) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    min-width: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 12px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  td:last-child {
+    border-bottom: 0;
+  }
+
+  td.number {
+    text-align: left;
+  }
+
+  td.merchant,
+  td.wrap-cell {
+    min-width: 0;
+    max-width: none;
+  }
+
+  td[data-label="ラベル"],
+  td[data-label="管理"],
+  td.empty {
+    grid-template-columns: 1fr;
+  }
+
+  td.empty::before {
+    content: none;
+  }
+
+  .chips,
+  .admin-cell {
+    min-width: 0;
+  }
+
+  .chip {
+    max-width: 100%;
+  }
+
+  .admin-cell select,
+  .admin-cell button {
+    min-width: 0;
+    width: 100%;
+  }
+
+  dialog {
+    width: min(100% - 16px, 420px);
+    max-width: calc(100% - 16px);
+    padding: 16px;
+  }
+
+  .dialog-form {
+    width: 100%;
+  }
+
+  .dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .dialog-actions button {
+    width: 100%;
+  }
+
+  .toast {
+    right: 8px;
+    bottom: 8px;
+    width: calc(100% - 16px);
   }
 }

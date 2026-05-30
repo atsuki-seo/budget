@@ -7,6 +7,7 @@ const state = {
   total: 0,
   limit: 50,
   offset: 0,
+  filtersExpanded: true,
 };
 
 const yen = new Intl.NumberFormat('ja-JP', {
@@ -115,6 +116,7 @@ function bindElements() {
   elements.loginForm = $('#loginForm');
   elements.cancelLoginButton = $('#cancelLoginButton');
   elements.filtersForm = $('#filtersForm');
+  elements.filtersToggleButton = $('#filtersToggleButton');
   elements.resetFiltersButton = $('#resetFiltersButton');
   elements.labelFilter = $('#labelFilter');
   elements.includeDeletedLabel = $('#includeDeletedLabel');
@@ -136,6 +138,8 @@ function bindElements() {
 }
 
 function bindEvents() {
+  bindFiltersToggle();
+
   elements.loginButton.addEventListener('click', () => {
     elements.loginForm.reset();
     if (typeof elements.loginDialog.showModal === 'function') {
@@ -245,6 +249,37 @@ function bindEvents() {
       showToast(error.message);
     }
   });
+}
+
+function bindFiltersToggle() {
+  const mobileQuery = window.matchMedia('(max-width: 760px)');
+  state.filtersExpanded = !mobileQuery.matches;
+
+  elements.filtersToggleButton.addEventListener('click', () => {
+    state.filtersExpanded = !state.filtersExpanded;
+    renderFiltersPanel(mobileQuery.matches);
+  });
+
+  const handleViewportChange = (event) => {
+    renderFiltersPanel(event.matches);
+  };
+
+  if (typeof mobileQuery.addEventListener === 'function') {
+    mobileQuery.addEventListener('change', handleViewportChange);
+  } else {
+    mobileQuery.addListener(handleViewportChange);
+  }
+
+  renderFiltersPanel(mobileQuery.matches);
+}
+
+function renderFiltersPanel(isMobile) {
+  elements.filtersToggleButton.hidden = !isMobile;
+
+  const expanded = !isMobile || state.filtersExpanded;
+  elements.filtersForm.hidden = !expanded;
+  elements.filtersToggleButton.setAttribute('aria-expanded', String(expanded));
+  elements.filtersToggleButton.textContent = expanded ? '条件を隠す' : '条件を表示';
 }
 
 async function loadSession() {
@@ -389,8 +424,11 @@ async function loadTransactions() {
   }
 }
 
-function appendCell(row, text, className) {
-  const cell = createElement('td', { text: text ?? '-' });
+function appendCell(row, label, text, className) {
+  const cell = createElement('td', {
+    text: text ?? '-',
+    attrs: { 'data-label': label },
+  });
   if (className) {
     cell.className = className;
   }
@@ -415,27 +453,27 @@ function renderTransactions() {
 
   const rows = state.transactions.map((transaction) => {
     const row = createElement('tr');
-    appendCell(row, formatDate(transaction.used_on));
-    appendCell(row, transaction.merchant, 'merchant');
-    appendCell(row, transaction.card_user);
-    appendCell(row, transaction.payment_method);
-    appendCell(row, transaction.payment_category);
-    appendCell(row, formatCurrency(transaction.usage_amount), 'number');
-    appendCell(row, formatCurrency(transaction.fee_amount), 'number');
-    appendCell(row, formatCurrency(transaction.total_amount), 'number');
-    appendCell(row, formatCurrency(transaction.billing_amount), 'number');
-    appendCell(row, formatCurrency(transaction.carried_forward_amount), 'number');
-    appendCell(row, formatCurrency(transaction.adjustment_amount), 'number');
-    appendCell(row, formatDate(transaction.statement_payment_on));
-    appendCell(row, formatDate(transaction.budget_date));
-    appendCell(row, formatCurrency(transaction.budget_amount), 'number');
+    appendCell(row, '利用日', formatDate(transaction.used_on));
+    appendCell(row, '店名', transaction.merchant, 'merchant');
+    appendCell(row, '利用者', transaction.card_user);
+    appendCell(row, '決済方法', transaction.payment_method);
+    appendCell(row, '支払区分', transaction.payment_category);
+    appendCell(row, '利用金額', formatCurrency(transaction.usage_amount), 'number');
+    appendCell(row, '手数料', formatCurrency(transaction.fee_amount), 'number');
+    appendCell(row, '支払総額', formatCurrency(transaction.total_amount), 'number');
+    appendCell(row, '当月支払', formatCurrency(transaction.billing_amount), 'number');
+    appendCell(row, '繰越', formatCurrency(transaction.carried_forward_amount), 'number');
+    appendCell(row, '調整', formatCurrency(transaction.adjustment_amount), 'number');
+    appendCell(row, '当月お支払日', formatDate(transaction.statement_payment_on));
+    appendCell(row, '計上日', formatDate(transaction.budget_date));
+    appendCell(row, '計上額', formatCurrency(transaction.budget_amount), 'number');
 
-    const labelsCell = createElement('td');
+    const labelsCell = createElement('td', { attrs: { 'data-label': 'ラベル' } });
     labelsCell.append(renderTransactionLabels(transaction));
     row.append(labelsCell);
 
     if (state.loggedIn) {
-      const adminCell = createElement('td');
+      const adminCell = createElement('td', { attrs: { 'data-label': '管理' } });
       adminCell.append(renderTransactionAdmin(transaction));
       row.append(adminCell);
     }
@@ -594,21 +632,21 @@ function renderImports() {
 
   const rows = state.imports.map((item) => {
     const row = createElement('tr');
-    appendCell(row, item.imported_at);
-    appendCell(row, item.statement_payment_on);
-    appendCell(row, item.source_filename);
-    appendCell(row, item.row_count, 'number');
-    appendCell(row, item.inserted_count, 'number');
-    appendCell(row, item.updated_count, 'number');
-    appendCell(row, item.superseded_count, 'number');
-    const statusCell = createElement('td');
+    appendCell(row, '取込日時', item.imported_at);
+    appendCell(row, '支払日', item.statement_payment_on);
+    appendCell(row, 'CSV', item.source_filename, 'wrap-cell');
+    appendCell(row, '件数', item.row_count, 'number');
+    appendCell(row, '追加', item.inserted_count, 'number');
+    appendCell(row, '更新', item.updated_count, 'number');
+    appendCell(row, '差替', item.superseded_count, 'number');
+    const statusCell = createElement('td', { attrs: { 'data-label': '状態' } });
     statusCell.append(createElement('span', {
       className: item.deleted_at ? 'status deleted' : 'status',
       text: item.deleted_at ? '削除済み' : '有効',
     }));
     row.append(statusCell);
 
-    const actionCell = createElement('td');
+    const actionCell = createElement('td', { attrs: { 'data-label': '操作' } });
     const button = createElement('button', {
       className: 'danger',
       text: '削除',

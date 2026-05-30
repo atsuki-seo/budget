@@ -22,9 +22,12 @@
 
     <main class="layout">
       <section class="panel" aria-labelledby="filtersHeading">
-        <div class="section-header">
+        <div class="section-header filters-header">
           <h2 id="filtersHeading">検索条件</h2>
-          <button id="resetFiltersButton" class="secondary" type="button">リセット</button>
+          <div class="filters-actions">
+            <button id="filtersToggleButton" class="secondary filter-toggle" type="button" aria-expanded="true" aria-controls="filtersForm">条件を隠す</button>
+            <button id="resetFiltersButton" class="secondary" type="button">リセット</button>
+          </div>
         </div>
         <form id="filtersForm" class="filters">
           <label>
