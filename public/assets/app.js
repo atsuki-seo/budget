@@ -645,8 +645,8 @@ function renderTransactions() {
     appendCell(row, '利用者', transaction.card_user);
     appendCell(row, '決済方法', transaction.payment_method);
     appendCell(row, '支払区分', transaction.payment_category);
-    appendCell(row, '利用金額', formatCurrency(transaction.usage_amount), 'number');
     appendCell(row, '当月支払', formatCurrency(transaction.billing_amount), 'number');
+    appendCell(row, '利用金額', formatCurrency(transaction.usage_amount), 'number');
     appendCell(row, '繰越', formatCurrency(transaction.carried_forward_amount), 'number');
     appendCell(row, '調整', formatCurrency(transaction.adjustment_amount), 'number');
     appendCell(row, '当月お支払日', formatDate(transaction.statement_payment_on));
