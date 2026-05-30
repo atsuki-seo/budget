@@ -153,7 +153,7 @@ gh api --method POST repos/YOUR_GITHUB_OWNER/budget/environments/xserver-product
 | Name | Value |
 | --- | --- |
 | `XSERVER_HOST` | `YOUR_XSERVER_HOST` |
-| `XSERVER_PORT` | `10022` |
+| `XSERVER_PORT` | `YOUR_XSERVER_PORT` |
 | `XSERVER_USER` | `YOUR_XSERVER_USER` |
 | `XSERVER_TARGET_DIR` | `YOUR_DOMAIN/public_html/budget` |
 | `PUBLIC_URL` | `https://example.com/budget` |
@@ -162,7 +162,7 @@ CLI equivalent:
 
 ```sh
 gh variable set XSERVER_HOST --env xserver-production --body "YOUR_XSERVER_HOST"
-gh variable set XSERVER_PORT --env xserver-production --body "10022"
+gh variable set XSERVER_PORT --env xserver-production --body "YOUR_XSERVER_PORT"
 gh variable set XSERVER_USER --env xserver-production --body "YOUR_XSERVER_USER"
 gh variable set XSERVER_TARGET_DIR --env xserver-production --body "YOUR_DOMAIN/public_html/budget"
 gh variable set PUBLIC_URL --env xserver-production --body "https://example.com/budget"
@@ -194,7 +194,7 @@ gh secret set XSERVER_SSH_KEY --env xserver-production < .ssh/xserver_actions_ed
 Capture the Xserver SSH host key locally, then verify the fingerprint through a trusted channel before storing it in GitHub.
 
 ```sh
-ssh-keyscan -p 10022 YOUR_XSERVER_HOST > .ssh/xserver_known_hosts
+ssh-keyscan -p YOUR_XSERVER_PORT YOUR_XSERVER_HOST > .ssh/xserver_known_hosts
 ssh-keygen -lf .ssh/xserver_known_hosts
 ```
 
@@ -206,7 +206,7 @@ gh secret set XSERVER_KNOWN_HOSTS --env xserver-production < .ssh/xserver_known_
 
 Before the first GitHub Actions connection test, turn Xserver's foreign IP access restriction OFF for SSH.
 
-The `YOUR_DOMAIN` host has a matching SSL certificate. Keep `PUBLIC_URL` on HTTPS unless the certificate configuration changes.
+The public host must have a matching SSL certificate. Keep `PUBLIC_URL` on HTTPS unless the certificate configuration changes.
 
 ## Verification
 
