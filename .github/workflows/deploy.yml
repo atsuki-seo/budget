@@ -67,13 +67,9 @@ jobs:
             exit 1
           fi
 
-          if [[ "$PUBLIC_URL" != https://* && "$PUBLIC_URL" != http://* ]]; then
-            echo "::error::PUBLIC_URL must use http or https"
+          if [[ "$PUBLIC_URL" != https://* ]]; then
+            echo "::error::PUBLIC_URL must use https"
             exit 1
-          fi
-
-          if [[ "$PUBLIC_URL" == http://* ]]; then
-            echo "::warning::PUBLIC_URL uses http. Switch to https after the deployment host has a matching SSL certificate."
           fi
 
           {
