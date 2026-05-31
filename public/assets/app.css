@@ -174,8 +174,9 @@ body[data-page="transactions"] .topbar {
 
 .summary-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto auto auto;
   align-items: end;
+  justify-content: start;
   gap: 10px 16px;
   padding: 10px clamp(16px, 4vw, 32px);
   border-bottom: 1px solid var(--border);
@@ -215,10 +216,10 @@ body[data-page="transactions"] .topbar {
 }
 
 .summary-bar .filters {
-  grid-template-columns: repeat(2, minmax(140px, 220px)) auto;
+  grid-template-columns: repeat(2, minmax(140px, 220px));
 }
 
-.summary-bar .filters button {
+.summary-bar > button {
   align-self: end;
 }
 
@@ -245,7 +246,7 @@ label span {
   display: flex;
   min-width: 0;
   align-items: baseline;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
 }
 
@@ -259,7 +260,8 @@ label span {
   font-size: 1.35rem;
   line-height: 1.2;
   overflow-wrap: anywhere;
-  text-align: right;
+  text-align: left;
+  white-space: nowrap;
 }
 
 .stack {
@@ -464,12 +466,13 @@ dialog::backdrop {
     gap: 8px;
   }
 
-  .summary-bar .filters button {
-    grid-column: 1 / -1;
+  .summary-bar > button {
+    order: 2;
     width: 100%;
   }
 
   .summary-total {
+    order: 3;
     justify-content: space-between;
     padding-top: 8px;
     border-top: 1px solid var(--border);
