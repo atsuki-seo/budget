@@ -66,6 +66,12 @@
             <h2 id="incomeTransactionsHeading">収入明細</h2>
             <p id="incomeResultCount" class="muted">-</p>
           </div>
+          <div class="table-header-actions" aria-label="収入明細の表フィルター">
+            <div class="table-filter-shortcuts">
+              <button class="table-filter-chip" type="button" data-table-filter-trigger data-filter-group="income" data-filter-key="payment_method" aria-haspopup="true" aria-expanded="false">受取方法</button>
+            </div>
+            <button id="incomeTableFiltersResetButton" class="secondary table-filter-reset" type="button" data-table-filter-reset="income" hidden>リセット</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -73,7 +79,7 @@
               <tr>
                 <th>受取日</th>
                 <th>摘要</th>
-                <th>受取方法</th>
+                <th><button class="table-heading-filter" type="button" data-table-filter-trigger data-filter-group="income" data-filter-key="payment_method" aria-haspopup="true" aria-expanded="false">受取方法</button></th>
                 <th class="number">金額</th>
               </tr>
             </thead>
@@ -88,6 +94,14 @@
             <h2 id="expenseTransactionsHeading">支出明細</h2>
             <p id="expenseResultCount" class="muted">-</p>
           </div>
+          <div class="table-header-actions" aria-label="支出明細の表フィルター">
+            <div class="table-filter-shortcuts">
+              <button class="table-filter-chip" type="button" data-table-filter-trigger data-filter-group="expense" data-filter-key="card_user" aria-haspopup="true" aria-expanded="false">利用者</button>
+              <button class="table-filter-chip" type="button" data-table-filter-trigger data-filter-group="expense" data-filter-key="payment_method" aria-haspopup="true" aria-expanded="false">決済方法</button>
+              <button class="table-filter-chip" type="button" data-table-filter-trigger data-filter-group="expense" data-filter-key="payment_category" aria-haspopup="true" aria-expanded="false">支払区分</button>
+            </div>
+            <button id="expenseTableFiltersResetButton" class="secondary table-filter-reset" type="button" data-table-filter-reset="expense" hidden>リセット</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -95,9 +109,9 @@
               <tr>
                 <th>支払日</th>
                 <th>店名</th>
-                <th>利用者</th>
-                <th>決済方法</th>
-                <th>支払区分</th>
+                <th><button class="table-heading-filter" type="button" data-table-filter-trigger data-filter-group="expense" data-filter-key="card_user" aria-haspopup="true" aria-expanded="false">利用者</button></th>
+                <th><button class="table-heading-filter" type="button" data-table-filter-trigger data-filter-group="expense" data-filter-key="payment_method" aria-haspopup="true" aria-expanded="false">決済方法</button></th>
+                <th><button class="table-heading-filter" type="button" data-table-filter-trigger data-filter-group="expense" data-filter-key="payment_category" aria-haspopup="true" aria-expanded="false">支払区分</button></th>
                 <th class="number">当月支払</th>
                 <th class="number">利用金額</th>
                 <th class="number">繰越</th>
@@ -124,6 +138,7 @@
       </form>
     </dialog>
 
+    <div id="tableFilterMenu" class="table-filter-menu" hidden></div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   </body>
 </html>

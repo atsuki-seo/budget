@@ -19,6 +19,17 @@ const state = {
   defaultMonth: '',
   selectedMonthFrom: '',
   selectedMonthTo: '',
+  tableFilters: {
+    income: {
+      payment_method: new Set(),
+    },
+    expense: {
+      card_user: new Set(),
+      payment_method: new Set(),
+      payment_category: new Set(),
+    },
+  },
+  openTableFilter: null,
 };
 
 const manualPaymentMethods = [
@@ -38,6 +49,33 @@ const manualReceivingMethods = [
 const nonCardPaymentMethods = new Set(['銀行口座', '現金']);
 const manualInstallmentCounts = [2, 3, 5, 6, 10, 12, 15, 18, 20, 24, 30, 36, 48];
 const maxIntegerAmount = 2147483647;
+const tableFilterDefinitions = {
+  income: [
+    {
+      key: 'payment_method',
+      label: '受取方法',
+      value: (transaction) => normalizeFilterValue(transaction.payment_method),
+    },
+  ],
+  expense: [
+    {
+      key: 'card_user',
+      label: '利用者',
+      value: (transaction) => normalizeFilterValue(transaction.card_user),
+    },
+    {
+      key: 'payment_method',
+      label: '決済方法',
+      value: (transaction) => normalizeFilterValue(transaction.payment_method),
+    },
+    {
+      key: 'payment_category',
+      label: '支払区分',
+      value: (transaction) => normalizePaymentCategoryFilterValue(transaction.payment_category),
+      sort: (a, b) => ['1回', '分割'].indexOf(a) - ['1回', '分割'].indexOf(b),
+    },
+  ],
+};
 
 const yen = new Intl.NumberFormat('ja-JP', {
   style: 'currency',
@@ -161,6 +199,8 @@ function bindTransactionsElements() {
   elements.expenseResultCount = $('#expenseResultCount');
   elements.incomeTransactionsBody = $('#incomeTransactionsBody');
   elements.expenseTransactionsBody = $('#expenseTransactionsBody');
+  elements.tableFilterMenu = $('#tableFilterMenu');
+  elements.tableFilterResetButtons = [...document.querySelectorAll('[data-table-filter-reset]')];
 }
 
 function bindAdminElements() {
@@ -738,6 +778,20 @@ function bindTransactionsEvents() {
     resetMonthFilters();
     await refreshData();
   });
+
+  for (const button of elements.tableFilterResetButtons) {
+    button.addEventListener('click', () => {
+      clearTableFilters(button.dataset.tableFilterReset);
+      closeTableFilterMenu();
+      renderTransactions();
+    });
+  }
+
+  elements.tableFilterMenu.addEventListener('change', handleTableFilterMenuChange);
+  document.addEventListener('click', handleTableFilterDocumentClick);
+  document.addEventListener('keydown', handleTableFilterKeydown);
+  window.addEventListener('resize', positionOpenTableFilterMenu);
+  window.addEventListener('scroll', positionOpenTableFilterMenu, true);
 }
 
 function bindAdminEvents() {
@@ -1000,27 +1054,16 @@ async function refreshData() {
   if (state.availableMonths.length === 0) {
     state.transactions = [];
     state.total = 0;
-    renderSummary([]);
     renderTransactions();
     return;
   }
 
-  await Promise.all([loadSummary(), loadTransactions()]);
+  await loadTransactions();
 }
 
-async function loadSummary() {
-  try {
-    const params = queryParams();
-    const data = await api(`api/summary.php?${params.toString()}`);
-    renderSummary(data.items || []);
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-function renderSummary(items) {
-  const incomeAmount = items.reduce((sum, item) => sum + Number(item.income_amount || 0), 0);
-  const expenseAmount = items.reduce((sum, item) => sum + Number(item.expense_amount || 0), 0);
+function renderSummaryTotals(incomeTransactions, expenseTransactions) {
+  const incomeAmount = incomeTransactions.reduce((sum, item) => sum + Number(item.billing_amount || 0), 0);
+  const expenseAmount = expenseTransactions.reduce((sum, item) => sum + Number(item.billing_amount || 0), 0);
   elements.summaryIncomeAmount.textContent = formatCurrency(incomeAmount);
   elements.summaryExpenseAmount.textContent = formatCurrency(expenseAmount);
 }
@@ -1044,6 +1087,289 @@ async function loadTransactions() {
   }
 }
 
+function normalizeFilterValue(value) {
+  const text = String(value ?? '').trim();
+  return text === '' ? '未設定' : text;
+}
+
+function normalizePaymentCategoryFilterValue(value) {
+  return String(value ?? '').trim() === '1回' ? '1回' : '分割';
+}
+
+function tableFilterDefinition(group, key) {
+  return (tableFilterDefinitions[group] || []).find((definition) => definition.key === key) || null;
+}
+
+function selectedTableFilterValues(group, key) {
+  return state.tableFilters[group]?.[key] || new Set();
+}
+
+function transactionTableGroup(transaction) {
+  return transaction.transaction_type === 'income' ? 'income' : 'expense';
+}
+
+function transactionsForTableGroup(group) {
+  return state.transactions.filter((transaction) => transactionTableGroup(transaction) === group);
+}
+
+function compareFilterValues(a, b) {
+  return a.localeCompare(b, 'ja-JP', { numeric: true });
+}
+
+function tableFilterOptions(transactions, definition) {
+  const seen = new Set();
+  const options = [];
+
+  for (const transaction of transactions) {
+    const value = definition.value(transaction);
+    if (!seen.has(value)) {
+      seen.add(value);
+      options.push(value);
+    }
+  }
+
+  return options.sort(definition.sort || compareFilterValues);
+}
+
+function tableFilterOptionsByKey(group, transactions) {
+  return Object.fromEntries(
+    (tableFilterDefinitions[group] || []).map((definition) => [
+      definition.key,
+      tableFilterOptions(transactions, definition),
+    ])
+  );
+}
+
+function pruneTableFilters(group, optionsByKey) {
+  for (const definition of tableFilterDefinitions[group] || []) {
+    const selected = selectedTableFilterValues(group, definition.key);
+    const available = new Set(optionsByKey[definition.key] || []);
+    for (const value of [...selected]) {
+      if (!available.has(value)) {
+        selected.delete(value);
+      }
+    }
+  }
+}
+
+function hasActiveTableFilter(group, key) {
+  return selectedTableFilterValues(group, key).size > 0;
+}
+
+function hasActiveTableFilters(group) {
+  return (tableFilterDefinitions[group] || []).some((definition) => hasActiveTableFilter(group, definition.key));
+}
+
+function transactionMatchesTableFilters(transaction, group) {
+  return (tableFilterDefinitions[group] || []).every((definition) => {
+    const selected = selectedTableFilterValues(group, definition.key);
+    return selected.size === 0 || selected.has(definition.value(transaction));
+  });
+}
+
+function filterTableTransactions(transactions, group) {
+  return transactions.filter((transaction) => transactionMatchesTableFilters(transaction, group));
+}
+
+function clearTableFilters(group) {
+  for (const selected of Object.values(state.tableFilters[group] || {})) {
+    selected.clear();
+  }
+}
+
+function updateTableFilterExpandedStates() {
+  const openGroup = state.openTableFilter?.group || '';
+  const openKey = state.openTableFilter?.key || '';
+
+  for (const trigger of document.querySelectorAll('[data-table-filter-trigger]')) {
+    const isOpen = !elements.tableFilterMenu.hidden
+      && trigger.dataset.filterGroup === openGroup
+      && trigger.dataset.filterKey === openKey;
+    trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  }
+}
+
+function updateTableFilterControls(optionsByGroup) {
+  for (const trigger of document.querySelectorAll('[data-table-filter-trigger]')) {
+    const group = trigger.dataset.filterGroup;
+    const key = trigger.dataset.filterKey;
+    const definition = tableFilterDefinition(group, key);
+    const options = optionsByGroup[group]?.[key] || [];
+
+    if (definition === null) {
+      trigger.disabled = true;
+      continue;
+    }
+
+    const selectedCount = selectedTableFilterValues(group, key).size;
+    trigger.textContent = selectedCount === 0 ? definition.label : `${definition.label} (${selectedCount})`;
+    trigger.disabled = options.length === 0;
+    trigger.classList.toggle('is-active', selectedCount > 0);
+    trigger.setAttribute(
+      'aria-label',
+      selectedCount === 0 ? `${definition.label}フィルター` : `${definition.label}フィルター ${selectedCount}件選択中`
+    );
+  }
+
+  for (const button of elements.tableFilterResetButtons) {
+    button.hidden = !hasActiveTableFilters(button.dataset.tableFilterReset);
+  }
+
+  updateTableFilterExpandedStates();
+}
+
+function closeTableFilterMenu() {
+  if (!elements.tableFilterMenu) {
+    return;
+  }
+
+  elements.tableFilterMenu.hidden = true;
+  elements.tableFilterMenu.replaceChildren();
+  elements.tableFilterMenu.style.left = '';
+  elements.tableFilterMenu.style.top = '';
+  state.openTableFilter = null;
+  updateTableFilterExpandedStates();
+}
+
+function positionTableFilterMenu(trigger = state.openTableFilter?.trigger) {
+  if (!trigger || !elements.tableFilterMenu || elements.tableFilterMenu.hidden) {
+    return;
+  }
+
+  const margin = 8;
+  const rect = trigger.getBoundingClientRect();
+  const menuWidth = elements.tableFilterMenu.offsetWidth;
+  const menuHeight = elements.tableFilterMenu.offsetHeight;
+  const maxLeft = window.innerWidth - menuWidth - margin;
+  const maxTop = window.innerHeight - menuHeight - margin;
+  let left = rect.left;
+  let top = rect.bottom + 6;
+
+  if (left > maxLeft) {
+    left = maxLeft;
+  }
+  if (top > maxTop && rect.top - menuHeight - 6 >= margin) {
+    top = rect.top - menuHeight - 6;
+  }
+
+  elements.tableFilterMenu.style.left = `${Math.max(margin, left)}px`;
+  elements.tableFilterMenu.style.top = `${Math.max(margin, Math.min(top, maxTop))}px`;
+}
+
+function positionOpenTableFilterMenu() {
+  positionTableFilterMenu();
+}
+
+function renderTableFilterMenu() {
+  if (!state.openTableFilter || !elements.tableFilterMenu) {
+    return;
+  }
+
+  const { group, key } = state.openTableFilter;
+  const definition = tableFilterDefinition(group, key);
+  if (definition === null) {
+    closeTableFilterMenu();
+    return;
+  }
+
+  const options = tableFilterOptions(transactionsForTableGroup(group), definition);
+  const selected = selectedTableFilterValues(group, key);
+  const title = createElement('p', { className: 'table-filter-menu-title', text: definition.label });
+
+  if (options.length === 0) {
+    const empty = createElement('p', { className: 'table-filter-menu-empty', text: '候補なし' });
+    elements.tableFilterMenu.replaceChildren(title, empty);
+    elements.tableFilterMenu.hidden = false;
+    updateTableFilterExpandedStates();
+    positionTableFilterMenu();
+    return;
+  }
+
+  const list = createElement('div', { className: 'table-filter-options' });
+  const optionNodes = options.map((value, index) => {
+    const id = `table-filter-${group}-${key}-${index}`;
+    const label = createElement('label', { className: 'table-filter-option', attrs: { for: id } });
+    const input = createElement('input', {
+      attrs: {
+        id,
+        type: 'checkbox',
+        value,
+        'data-table-filter-value': value,
+      },
+    });
+    input.checked = selected.has(value);
+    label.append(input, createElement('span', { text: value }));
+    return label;
+  });
+  list.replaceChildren(...optionNodes);
+
+  elements.tableFilterMenu.replaceChildren(title, list);
+  elements.tableFilterMenu.hidden = false;
+  updateTableFilterExpandedStates();
+  positionTableFilterMenu();
+}
+
+function toggleTableFilterMenu(trigger) {
+  const group = trigger.dataset.filterGroup;
+  const key = trigger.dataset.filterKey;
+  const isSameFilter = state.openTableFilter
+    && state.openTableFilter.group === group
+    && state.openTableFilter.key === key
+    && !elements.tableFilterMenu.hidden;
+
+  if (isSameFilter) {
+    closeTableFilterMenu();
+    return;
+  }
+
+  state.openTableFilter = { group, key, trigger };
+  renderTableFilterMenu();
+}
+
+function handleTableFilterDocumentClick(event) {
+  const trigger = event.target.closest('[data-table-filter-trigger]');
+  if (trigger) {
+    event.preventDefault();
+    toggleTableFilterMenu(trigger);
+    return;
+  }
+
+  if (
+    elements.tableFilterMenu
+    && !elements.tableFilterMenu.hidden
+    && !elements.tableFilterMenu.contains(event.target)
+  ) {
+    closeTableFilterMenu();
+  }
+}
+
+function handleTableFilterKeydown(event) {
+  if (event.key !== 'Escape' || !elements.tableFilterMenu || elements.tableFilterMenu.hidden) {
+    return;
+  }
+
+  const trigger = state.openTableFilter?.trigger;
+  closeTableFilterMenu();
+  trigger?.focus();
+}
+
+function handleTableFilterMenuChange(event) {
+  const input = event.target.closest('input[data-table-filter-value]');
+  if (!input || !state.openTableFilter) {
+    return;
+  }
+
+  const { group, key } = state.openTableFilter;
+  const selected = selectedTableFilterValues(group, key);
+  if (input.checked) {
+    selected.add(input.value);
+  } else {
+    selected.delete(input.value);
+  }
+
+  renderTransactions();
+}
+
 function appendCell(row, label, text, className) {
   const cell = createElement('td', {
     text: text ?? '-',
@@ -1063,11 +1389,19 @@ function renderEmptyRow(body, message, colspan) {
   body.replaceChildren(row);
 }
 
-function renderIncomeTransactions(transactions) {
-  elements.incomeResultCount.textContent = `${transactions.length}件`;
+function renderTransactionCount(element, visibleCount, totalCount, isFiltered) {
+  element.textContent = isFiltered ? `${visibleCount} / ${totalCount}件` : `${totalCount}件`;
+}
+
+function renderIncomeTransactions(transactions, totalCount, isFiltered) {
+  renderTransactionCount(elements.incomeResultCount, transactions.length, totalCount, isFiltered);
 
   if (transactions.length === 0) {
-    renderEmptyRow(elements.incomeTransactionsBody, '収入明細なし', 4);
+    renderEmptyRow(
+      elements.incomeTransactionsBody,
+      isFiltered && totalCount > 0 ? '条件に一致する明細なし' : '収入明細なし',
+      4
+    );
     return;
   }
 
@@ -1083,11 +1417,15 @@ function renderIncomeTransactions(transactions) {
   elements.incomeTransactionsBody.replaceChildren(...rows);
 }
 
-function renderExpenseTransactions(transactions) {
-  elements.expenseResultCount.textContent = `${transactions.length}件`;
+function renderExpenseTransactions(transactions, totalCount, isFiltered) {
+  renderTransactionCount(elements.expenseResultCount, transactions.length, totalCount, isFiltered);
 
   if (transactions.length === 0) {
-    renderEmptyRow(elements.expenseTransactionsBody, '支出明細なし', 9);
+    renderEmptyRow(
+      elements.expenseTransactionsBody,
+      isFiltered && totalCount > 0 ? '条件に一致する明細なし' : '支出明細なし',
+      9
+    );
     return;
   }
 
@@ -1111,8 +1449,27 @@ function renderExpenseTransactions(transactions) {
 function renderTransactions() {
   const incomeTransactions = state.transactions.filter((transaction) => transaction.transaction_type === 'income');
   const expenseTransactions = state.transactions.filter((transaction) => transaction.transaction_type !== 'income');
-  renderIncomeTransactions(incomeTransactions);
-  renderExpenseTransactions(expenseTransactions);
+  const optionsByGroup = {
+    income: tableFilterOptionsByKey('income', incomeTransactions),
+    expense: tableFilterOptionsByKey('expense', expenseTransactions),
+  };
+
+  pruneTableFilters('income', optionsByGroup.income);
+  pruneTableFilters('expense', optionsByGroup.expense);
+
+  const filteredIncomeTransactions = filterTableTransactions(incomeTransactions, 'income');
+  const filteredExpenseTransactions = filterTableTransactions(expenseTransactions, 'expense');
+  const isIncomeFiltered = hasActiveTableFilters('income');
+  const isExpenseFiltered = hasActiveTableFilters('expense');
+
+  renderSummaryTotals(filteredIncomeTransactions, filteredExpenseTransactions);
+  renderIncomeTransactions(filteredIncomeTransactions, incomeTransactions.length, isIncomeFiltered);
+  renderExpenseTransactions(filteredExpenseTransactions, expenseTransactions.length, isExpenseFiltered);
+  updateTableFilterControls(optionsByGroup);
+
+  if (state.openTableFilter) {
+    renderTableFilterMenu();
+  }
 }
 
 async function loadImports() {
