@@ -16,6 +16,42 @@ const BUDGET_REQUIRED_HEADERS = [
     '当月お支払日',
 ];
 
+const BUDGET_CARD_PAYMENT_METHODS = [
+    'Apple Pay',
+    'Apple Pay QUICPay',
+    'Apple Pay タッチ決済',
+    'PayPayカード ゴールド',
+    'PayPayクレジット',
+    'タッチ決済',
+];
+
+const BUDGET_PAYMENT_METHODS = [
+    'Apple Pay',
+    'Apple Pay QUICPay',
+    'Apple Pay タッチ決済',
+    'PayPayカード ゴールド',
+    'PayPayクレジット',
+    'タッチ決済',
+    '銀行口座',
+    '現金',
+];
+
+const BUDGET_INSTALLMENT_COUNTS = [
+    2,
+    3,
+    5,
+    6,
+    10,
+    12,
+    15,
+    18,
+    20,
+    24,
+    30,
+    36,
+    48,
+];
+
 function budget_config(): array
 {
     static $config = null;
@@ -265,6 +301,112 @@ function budget_clean_text($value, int $maxLength, string $field): string
     return $text;
 }
 
+function budget_parse_manual_date($value, string $field): string
+{
+    if (!is_scalar($value)) {
+        throw new InvalidArgumentException("$field must be YYYY-MM-DD.");
+    }
+
+    $value = trim((string)$value);
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m)) {
+        throw new InvalidArgumentException("$field must be YYYY-MM-DD.");
+    }
+
+    if (!checkdate((int)$m[2], (int)$m[3], (int)$m[1])) {
+        throw new InvalidArgumentException("$field is not a valid date.");
+    }
+
+    return $value;
+}
+
+function budget_parse_manual_amount($value, string $field): int
+{
+    if (!is_scalar($value)) {
+        throw new InvalidArgumentException("$field must be an integer amount.");
+    }
+
+    $amount = str_replace([',', ' ', '　', "\t", "\r", "\n"], '', trim((string)$value));
+    if ($amount === '' || !preg_match('/^\d+$/', $amount)) {
+        throw new InvalidArgumentException("$field must be an integer amount.");
+    }
+
+    $amount = ltrim($amount, '0');
+    if ($amount === '') {
+        throw new InvalidArgumentException("$field must be greater than 0.");
+    }
+
+    if (strlen($amount) > 10 || (strlen($amount) === 10 && strcmp($amount, '2147483647') > 0)) {
+        throw new InvalidArgumentException("$field is too large.");
+    }
+
+    return (int)$amount;
+}
+
+function budget_is_card_payment_method(string $paymentMethod): bool
+{
+    return in_array($paymentMethod, BUDGET_CARD_PAYMENT_METHODS, true);
+}
+
+function budget_normalize_manual_payment_category($value): string
+{
+    $paymentCategory = budget_clean_text($value, 100, '支払区分');
+    if ($paymentCategory === '1回') {
+        return $paymentCategory;
+    }
+
+    if (!preg_match('/^均等 ([1-9]\d*)／([1-9]\d*)$/u', $paymentCategory, $m)) {
+        throw new InvalidArgumentException('支払区分 is invalid.');
+    }
+
+    $installmentNumber = (int)$m[1];
+    $installmentCount = (int)$m[2];
+    if (!in_array($installmentCount, BUDGET_INSTALLMENT_COUNTS, true)) {
+        throw new InvalidArgumentException('分割回数 is invalid.');
+    }
+
+    if ($installmentNumber < 1 || $installmentNumber > $installmentCount) {
+        throw new InvalidArgumentException('何回目 must be within 分割回数.');
+    }
+
+    return $paymentCategory;
+}
+
+function budget_normalize_manual_transaction(array $data): array
+{
+    $usedOn = budget_parse_manual_date($data['used_on'] ?? '', '利用日');
+    $merchant = budget_clean_text($data['merchant'] ?? '', 255, '店名・商品名');
+    if ($merchant === '') {
+        throw new InvalidArgumentException('店名・商品名 is required.');
+    }
+
+    $paymentMethod = budget_clean_text($data['payment_method'] ?? '', 100, '決済方法');
+    if (!in_array($paymentMethod, BUDGET_PAYMENT_METHODS, true)) {
+        throw new InvalidArgumentException('決済方法 is invalid.');
+    }
+
+    $amount = budget_parse_manual_amount($data['amount'] ?? '', '金額');
+    if (budget_is_card_payment_method($paymentMethod)) {
+        $statementPaymentOn = budget_parse_manual_date($data['statement_payment_on'] ?? '', '当月お支払日');
+        $paymentCategory = budget_normalize_manual_payment_category($data['payment_category'] ?? '');
+    } else {
+        $statementPaymentOn = $usedOn;
+        $paymentCategory = '1回';
+    }
+
+    return [
+        'statement_payment_on' => $statementPaymentOn,
+        'used_on' => $usedOn,
+        'merchant' => $merchant,
+        'card_user' => '本人',
+        'payment_method' => $paymentMethod,
+        'payment_category' => $paymentCategory,
+        'usage_amount' => $amount,
+        'billing_amount' => $amount,
+        'carried_forward_amount' => 0,
+        'adjustment_amount' => 0,
+    ];
+}
+
 function budget_optional_date_param(string $name): ?string
 {
     $raw = $_GET[$name] ?? '';
@@ -482,15 +624,34 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
     $pdo->beginTransaction();
 
     try {
-        $deleteExisting = $pdo->prepare('DELETE FROM transactions WHERE statement_payment_on = ?');
-        $deleteExisting->execute([$parsed['statement_payment_on']]);
+        $deleteCsvImports = $pdo->prepare(
+            "DELETE FROM imports
+             WHERE statement_payment_on = ?
+               AND source_type = 'csv'"
+        );
+        $deleteCsvImports->execute([$parsed['statement_payment_on']]);
+
+        $cardMethodPlaceholders = implode(', ', array_fill(0, count(BUDGET_CARD_PAYMENT_METHODS), '?'));
+        $deleteCardManualImports = $pdo->prepare(
+            "DELETE i
+             FROM imports i
+             INNER JOIN transactions t ON t.import_id = i.id
+             WHERE i.statement_payment_on = ?
+               AND i.source_type = 'manual'
+               AND t.payment_method IN ($cardMethodPlaceholders)"
+        );
+        $deleteCardManualImports->execute(array_merge(
+            [$parsed['statement_payment_on']],
+            BUDGET_CARD_PAYMENT_METHODS
+        ));
 
         $insertImport = $pdo->prepare(
             'INSERT INTO imports
-                (statement_payment_on, source_filename, row_count)
-             VALUES (?, ?, ?)'
+                (source_type, statement_payment_on, source_filename, row_count)
+             VALUES (?, ?, ?, ?)'
         );
         $insertImport->execute([
+            'csv',
             $parsed['statement_payment_on'],
             $sourceName,
             count($parsed['rows']),
@@ -529,6 +690,59 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
             'statement_payment_on' => $parsed['statement_payment_on'],
             'row_count' => count($parsed['rows']),
         ];
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+}
+
+function budget_create_manual_transaction(PDO $pdo, array $data): array
+{
+    $fields = budget_normalize_manual_transaction($data);
+
+    $pdo->beginTransaction();
+
+    try {
+        $insertImport = $pdo->prepare(
+            'INSERT INTO imports
+                (source_type, statement_payment_on, source_filename, row_count)
+             VALUES (?, ?, ?, ?)'
+        );
+        $insertImport->execute([
+            'manual',
+            $fields['statement_payment_on'],
+            '手入力',
+            1,
+        ]);
+        $importId = (int)$pdo->lastInsertId();
+
+        $insertTransaction = $pdo->prepare(
+            'INSERT INTO transactions
+                (import_id, statement_payment_on, used_on, merchant, card_user, payment_method, payment_category,
+                 usage_amount, billing_amount, carried_forward_amount, adjustment_amount)
+             VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $insertTransaction->execute([
+            $importId,
+            $fields['statement_payment_on'],
+            $fields['used_on'],
+            $fields['merchant'],
+            $fields['card_user'],
+            $fields['payment_method'],
+            $fields['payment_category'],
+            $fields['usage_amount'],
+            $fields['billing_amount'],
+            $fields['carried_forward_amount'],
+            $fields['adjustment_amount'],
+        ]);
+        $transactionId = (int)$pdo->lastInsertId();
+
+        $pdo->commit();
+
+        return ['id' => $transactionId, 'import_id' => $importId] + $fields;
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();

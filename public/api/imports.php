@@ -19,6 +19,7 @@ try {
         $stmt = $pdo->query(
             "SELECT
                 id,
+                source_type,
                 statement_payment_on,
                 source_filename,
                 row_count,
@@ -32,6 +33,7 @@ try {
         foreach ($stmt->fetchAll() as $row) {
             $items[] = [
                 'id' => (int)$row['id'],
+                'source_type' => $row['source_type'],
                 'statement_payment_on' => $row['statement_payment_on'],
                 'source_filename' => $row['source_filename'],
                 'row_count' => (int)$row['row_count'],

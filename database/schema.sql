@@ -1,10 +1,12 @@
 CREATE TABLE IF NOT EXISTS imports (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    source_type VARCHAR(20) NOT NULL DEFAULT 'csv',
     statement_payment_on DATE NOT NULL,
     source_filename VARCHAR(255) NOT NULL,
     row_count INT UNSIGNED NOT NULL DEFAULT 0,
     imported_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    KEY idx_imports_source_type (source_type),
     KEY idx_imports_statement_payment_on (statement_payment_on),
     KEY idx_imports_imported_at (imported_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

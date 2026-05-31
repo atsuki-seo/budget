@@ -2,18 +2,18 @@
 
 PHP + MySQL household budget app for `https://example.com/budget`.
 
-The app exposes read-only transaction views publicly. Admin-only changes, including CSV import and import deletion, require the single admin password configured outside the web root.
+The app exposes read-only transaction views publicly. Admin-only changes, including manual expense entry, CSV import, and import deletion, require the single admin password configured outside the web root.
 
 ## Repository Layout
 
 ```text
 database/schema.sql      Current MySQL/MariaDB schema
 public/                  Files mirrored to Xserver public_html/budget
-public/admin/            Admin screen for CSV import
+public/admin/            Admin screen for manual expense entry and CSV import
 public/api/              JSON API endpoints
 public/assets/           Vanilla CSS/JavaScript
 public/lib/app.php       Shared PHP runtime helpers
-tests/                   Local parser smoke tests
+tests/                   Local parser and normalization smoke tests
 ```
 
 The GitHub Actions workflow mirrors only `public/` to:
@@ -46,6 +46,7 @@ Admin API:
 - `GET /api/session.php`
 - `POST /api/session.php`
 - `DELETE /api/session.php`
+- `POST /api/transactions.php`
 - `POST /api/imports.php`
 - `GET /api/imports.php`
 - `DELETE /api/imports.php?id=...`
@@ -53,6 +54,7 @@ Admin API:
 All API responses are JSON with `Cache-Control: no-store`. Mutating admin requests require both an authenticated PHP session and the `X-CSRF-Token` header.
 
 `GET /api/imports.php` defaults to `limit=5`, supports `offset`, and returns import log rows in reverse import order.
+Each import row includes `source_type`, where `csv` is an uploaded PayPay card CSV and `manual` is a single hand-entered expense.
 `DELETE /api/imports.php?id=...` physically deletes the import row. Transactions still attached to that import are deleted by the foreign key cascade.
 
 ## Initial Xserver Setup
@@ -99,22 +101,46 @@ mysql -h YOUR_DB_HOST -u YOUR_DB_USER -p YOUR_DB_NAME < database/schema.sql
 
 For local HTTP-only development, set `'cookie_secure' => false` in a local ignored `budget-config.php`.
 
+Existing deployments created before manual entry support must add `imports.source_type` before deploying this code.
+Copy the migration file to the server, then run it against the production database:
+
+```sh
+scp -P YOUR_XSERVER_PORT database/migrations/20260531_add_imports_source_type.sql \
+  YOUR_XSERVER_USER@YOUR_XSERVER_HOST:~/YOUR_DOMAIN/20260531_add_imports_source_type.sql
+
+ssh -p YOUR_XSERVER_PORT YOUR_XSERVER_USER@YOUR_XSERVER_HOST \
+  'mysql -h YOUR_DB_HOST -u YOUR_DB_USER -p YOUR_DB_NAME < ~/YOUR_DOMAIN/20260531_add_imports_source_type.sql'
+```
+
+## Manual Expense Entry
+
+1. Open `https://example.com/budget/admin/`.
+2. Enter the admin password in the login dialog.
+3. Use `データ追加` -> `追加` to enter one expense at a time.
+
+Manual entry creates one `imports` row with `source_type='manual'`, `source_filename='手入力'`, and `row_count=1`.
+
+Supported payment methods are fixed to the known PayPay card values plus `銀行口座` and `現金`.
+For `銀行口座` and `現金`, `statement_payment_on` is forced to `used_on` and `payment_category` is forced to `1回`.
+For card payment methods, the form accepts `1回` or `均等 N／M`; `M` must be one of `2,3,5,6,10,12,15,18,20,24,30,36,48` and `N` must be within `1..M`.
+
 ## CSV Import
 
 1. Open `https://example.com/budget/admin/`.
 2. Enter the admin password in the login dialog.
-3. Upload the card-detail CSV from the `CSV取込` screen.
+3. Upload the card-detail CSV from the `PayPayカード情報の取り込み` screen.
 
 The importer validates CSV headers and values, not file extensions. Each CSV must contain exactly one `当月お支払日`.
 
 Re-uploading the same payment-month CSV performs a month replacement:
 
-- Existing `transactions` rows with the same `statement_payment_on` are physically deleted first.
+- Existing CSV imports with the same `statement_payment_on` are physically deleted first.
+- Existing card-payment manual imports with the same `statement_payment_on` are physically deleted first.
+- Manual `現金` and `銀行口座` imports are kept even when their `statement_payment_on` matches the uploaded CSV.
 - All rows from the uploaded CSV are inserted and attached to the new `imports.id`.
 - Other payment dates are not changed.
-- Future provisional manual rows use `import_id = NULL` and are also replaced when a CSV with the same payment date arrives.
 
-The CSV file is treated as the source of truth. Per-row diff tracking, transaction soft delete/restore, budget date/amount derivation, and labels are not part of the current schema or API.
+The CSV file is treated as the source of truth for PayPay card rows. Per-row diff tracking, transaction soft delete/restore, budget date/amount derivation, and labels are not part of the current schema or API.
 
 ## Deployment
 
@@ -213,6 +239,7 @@ Local syntax and parser checks:
 node --check public/assets/app.js
 find public tests -name '*.php' -print0 | xargs -0 -n1 php -l
 php tests/csv_parser_test.php
+php tests/manual_transaction_test.php
 ```
 
 After deployment:

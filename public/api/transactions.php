@@ -5,7 +5,17 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/app.php';
 
 try {
-    budget_require_method(['GET']);
+    $method = budget_require_method(['GET', 'POST']);
+
+    if ($method === 'POST') {
+        budget_require_admin();
+        budget_require_csrf();
+
+        $pdo = budget_pdo();
+        $transaction = budget_create_manual_transaction($pdo, budget_request_data());
+
+        budget_json_response(['transaction' => $transaction], 201);
+    }
 
     $pdo = budget_pdo();
     $isAdmin = budget_is_admin();

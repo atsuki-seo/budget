@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
-    <meta name="description" content="せお家の家計簿を管理するページ">
-    <meta property="og:title" content="せお家の家計簿 管理画面">
-    <meta property="og:description" content="せお家の家計簿を管理するページ">
+    <meta name="description" content="せおの家計簿を管理するページ">
+    <meta property="og:title" content="せおの家計簿 管理画面">
+    <meta property="og:description" content="せおの家計簿を管理するページ">
     <meta property="og:image" content="https://s-atsuki.jp/budget/og-image.png">
     <meta property="og:image:type" content="image/png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <title>家計簿 管理画面</title>
+    <title>せおの家計簿 管理画面</title>
     <link rel="icon" href="../favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="../assets/app.css">
     <script type="module" src="../assets/app.js"></script>
@@ -21,7 +21,7 @@
       <div>
         <h1 class="brand-heading">
           <img class="brand-icon" src="../favicon.svg" alt="" width="32" height="32">
-          <span>家計簿 管理画面</span>
+          <span>せおの家計簿 管理画面</span>
         </h1>
       </div>
       <div class="topbar-actions">
@@ -31,37 +31,133 @@
     </header>
 
     <main class="layout">
-      <section id="adminContent" class="panel" aria-labelledby="importHeading" hidden>
-        <div class="section-header table-header">
-          <div>
-            <h2 id="importHeading">CSV取込</h2>
-            <p id="importsResultCount" class="muted">-</p>
+      <div id="adminContent" class="admin-stack" hidden>
+        <section class="panel" aria-labelledby="manualEntryHeading">
+          <div class="section-header">
+            <div>
+              <h2 id="manualEntryHeading">データ追加</h2>
+            </div>
+            <button id="openManualDialogButton" type="button">追加</button>
           </div>
-          <div class="pager">
-            <button id="prevImportsPageButton" class="secondary" type="button">前へ</button>
-            <button id="nextImportsPageButton" class="secondary" type="button">次へ</button>
+        </section>
+
+        <section class="panel" aria-labelledby="importHeading">
+          <div class="section-header table-header">
+            <div>
+              <h2 id="importHeading">PayPayカード情報の取り込み</h2>
+              <p id="importsResultCount" class="muted">-</p>
+            </div>
+            <div class="pager">
+              <button id="prevImportsPageButton" class="secondary" type="button">前へ</button>
+              <button id="nextImportsPageButton" class="secondary" type="button">次へ</button>
+            </div>
           </div>
-        </div>
-        <form id="importForm" class="stack">
-          <input id="csvFile" name="csv" type="file" accept=".csv,text/csv">
-          <button type="submit">アップロード</button>
-        </form>
-        <div class="table-wrap compact">
-          <table class="imports-table">
-            <thead>
-              <tr>
-                <th>取込日時</th>
-                <th>支払日</th>
-                <th>CSV</th>
-                <th class="number">件数</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="importsBody"></tbody>
-          </table>
-        </div>
-      </section>
+          <form id="importForm" class="stack">
+            <input id="csvFile" name="csv" type="file" accept=".csv,text/csv">
+            <button type="submit">アップロード</button>
+          </form>
+          <div class="table-wrap compact">
+            <table class="imports-table">
+              <thead>
+                <tr>
+                  <th>取込日時</th>
+                  <th>支払日</th>
+                  <th>データ元</th>
+                  <th class="number">件数</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="importsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </main>
+
+    <dialog id="manualEntryDialog">
+      <form id="manualEntryForm" method="dialog" class="dialog-form manual-dialog-form" novalidate>
+        <h2>データ追加</h2>
+
+        <div class="manual-grid">
+          <div class="field-group">
+            <label for="manualUsedOn">
+              <span>利用日</span>
+              <input id="manualUsedOn" name="used_on" type="date" required>
+            </label>
+            <p id="manualUsedOnError" class="field-error"></p>
+          </div>
+
+          <div class="field-group">
+            <label for="manualPaymentMethod">
+              <span>決済方法</span>
+              <select id="manualPaymentMethod" name="payment_method" required></select>
+            </label>
+            <p id="manualPaymentMethodError" class="field-error"></p>
+          </div>
+
+          <div class="field-group manual-grid-wide">
+            <label for="manualMerchant">
+              <span>店名・商品名</span>
+              <input id="manualMerchant" name="merchant" type="text" maxlength="255" autocomplete="off" required>
+            </label>
+            <p id="manualMerchantError" class="field-error"></p>
+          </div>
+
+          <div class="field-group">
+            <label for="manualAmount">
+              <span>金額</span>
+              <input id="manualAmount" name="amount" type="text" inputmode="numeric" autocomplete="off" required>
+            </label>
+            <p id="manualAmountError" class="field-error"></p>
+          </div>
+
+          <div id="manualCardDetails" class="manual-card-details manual-grid-wide">
+            <div class="field-group">
+              <label for="manualStatementPaymentOn">
+                <span>当月お支払日</span>
+                <input id="manualStatementPaymentOn" name="statement_payment_on" type="date">
+              </label>
+              <p id="manualStatementPaymentOnError" class="field-error"></p>
+            </div>
+
+            <fieldset class="field-group payment-category-field">
+              <legend>支払区分</legend>
+              <div class="segmented" role="group" aria-label="支払区分">
+                <label>
+                  <input type="radio" name="payment_category_mode" value="one_time" checked>
+                  <span>1回</span>
+                </label>
+                <label>
+                  <input type="radio" name="payment_category_mode" value="installment">
+                  <span>均等</span>
+                </label>
+              </div>
+              <div id="manualInstallmentControls" class="installment-controls" hidden>
+                <label for="manualInstallmentCount">
+                  <span>分割回数</span>
+                  <select id="manualInstallmentCount" name="installment_count"></select>
+                </label>
+                <label for="manualInstallmentNumber">
+                  <span>何回目</span>
+                  <select id="manualInstallmentNumber" name="installment_number"></select>
+                </label>
+              </div>
+              <p id="manualPaymentCategoryError" class="field-error"></p>
+            </fieldset>
+          </div>
+        </div>
+
+        <label class="checkbox-line manual-continuous">
+          <input id="manualContinue" name="continue" type="checkbox">
+          <span>連続して追加</span>
+        </label>
+
+        <div class="dialog-actions">
+          <button class="secondary" id="cancelManualEntryButton" type="button">キャンセル</button>
+          <button type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="loginDialog">
       <form id="loginForm" method="dialog" class="dialog-form">

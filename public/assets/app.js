@@ -23,6 +23,20 @@ const state = {
   selectedMonthTo: '',
 };
 
+const manualPaymentMethods = [
+  'Apple Pay',
+  'Apple Pay QUICPay',
+  'Apple Pay タッチ決済',
+  'PayPayカード ゴールド',
+  'PayPayクレジット',
+  'タッチ決済',
+  '銀行口座',
+  '現金',
+];
+const nonCardPaymentMethods = new Set(['銀行口座', '現金']);
+const manualInstallmentCounts = [2, 3, 5, 6, 10, 12, 15, 18, 20, 24, 30, 36, 48];
+const maxIntegerAmount = 2147483647;
+
 const yen = new Intl.NumberFormat('ja-JP', {
   style: 'currency',
   currency: 'JPY',
@@ -148,6 +162,29 @@ function bindTransactionsElements() {
 
 function bindAdminElements() {
   elements.adminContent = $('#adminContent');
+  elements.openManualDialogButton = $('#openManualDialogButton');
+  elements.manualEntryDialog = $('#manualEntryDialog');
+  elements.manualEntryForm = $('#manualEntryForm');
+  elements.cancelManualEntryButton = $('#cancelManualEntryButton');
+  elements.manualUsedOn = $('#manualUsedOn');
+  elements.manualMerchant = $('#manualMerchant');
+  elements.manualPaymentMethod = $('#manualPaymentMethod');
+  elements.manualAmount = $('#manualAmount');
+  elements.manualCardDetails = $('#manualCardDetails');
+  elements.manualStatementPaymentOn = $('#manualStatementPaymentOn');
+  elements.manualInstallmentControls = $('#manualInstallmentControls');
+  elements.manualInstallmentCount = $('#manualInstallmentCount');
+  elements.manualInstallmentNumber = $('#manualInstallmentNumber');
+  elements.manualContinue = $('#manualContinue');
+  elements.manualPaymentCategoryMode = [...document.querySelectorAll('input[name="payment_category_mode"]')];
+  elements.manualErrors = {
+    usedOn: $('#manualUsedOnError'),
+    merchant: $('#manualMerchantError'),
+    paymentMethod: $('#manualPaymentMethodError'),
+    amount: $('#manualAmountError'),
+    statementPaymentOn: $('#manualStatementPaymentOnError'),
+    paymentCategory: $('#manualPaymentCategoryError'),
+  };
   elements.importForm = $('#importForm');
   elements.importsBody = $('#importsBody');
   elements.importsResultCount = $('#importsResultCount');
@@ -179,6 +216,335 @@ function closeLoginDialog() {
   }
 
   elements.loginDialog.removeAttribute('open');
+}
+
+function localDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isValidDateValue(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  return (
+    date.getFullYear() === year
+    && date.getMonth() === month - 1
+    && date.getDate() === day
+  );
+}
+
+function normalizeManualAmount(value) {
+  const amount = String(value || '').trim().replace(/[,\s\u3000]/g, '');
+  if (!/^\d+$/.test(amount)) {
+    return null;
+  }
+
+  const withoutLeadingZeroes = amount.replace(/^0+/, '');
+  if (withoutLeadingZeroes === '') {
+    return null;
+  }
+
+  if (
+    withoutLeadingZeroes.length > 10
+    || (withoutLeadingZeroes.length === 10 && withoutLeadingZeroes > String(maxIntegerAmount))
+  ) {
+    return null;
+  }
+
+  return Number(withoutLeadingZeroes);
+}
+
+function isManualCardPaymentMethod(paymentMethod) {
+  return manualPaymentMethods.includes(paymentMethod) && !nonCardPaymentMethods.has(paymentMethod);
+}
+
+function replaceSelectOptions(select, values, selectedValue = '') {
+  const options = values.map((value) => createElement('option', {
+    text: value,
+    attrs: { value },
+  }));
+  select.replaceChildren(...options);
+  if (selectedValue !== '' && values.includes(selectedValue)) {
+    select.value = selectedValue;
+  }
+}
+
+function selectedPaymentCategoryMode() {
+  const selected = elements.manualPaymentCategoryMode.find((input) => input.checked);
+  return selected ? selected.value : 'one_time';
+}
+
+function setPaymentCategoryMode(mode) {
+  for (const input of elements.manualPaymentCategoryMode) {
+    input.checked = input.value === mode;
+  }
+  updateManualPaymentCategoryControls();
+}
+
+function updateManualInstallmentNumbers() {
+  const count = Number(elements.manualInstallmentCount.value || manualInstallmentCounts[0]);
+  const currentNumber = Number(elements.manualInstallmentNumber.value || 1);
+  const numbers = Array.from({ length: count }, (_, index) => String(index + 1));
+  replaceSelectOptions(
+    elements.manualInstallmentNumber,
+    numbers,
+    String(Math.min(Math.max(currentNumber, 1), count))
+  );
+}
+
+function updateManualPaymentCategoryControls() {
+  const isInstallment = selectedPaymentCategoryMode() === 'installment';
+  elements.manualInstallmentControls.hidden = !isInstallment;
+  if (isInstallment) {
+    updateManualInstallmentNumbers();
+  }
+}
+
+function updateManualPaymentMethodControls() {
+  const isCard = isManualCardPaymentMethod(elements.manualPaymentMethod.value);
+  elements.manualCardDetails.hidden = !isCard;
+  elements.manualStatementPaymentOn.disabled = !isCard;
+  elements.manualInstallmentCount.disabled = !isCard;
+  elements.manualInstallmentNumber.disabled = !isCard;
+  for (const input of elements.manualPaymentCategoryMode) {
+    input.disabled = !isCard;
+  }
+
+  if (!isCard) {
+    elements.manualStatementPaymentOn.value = elements.manualUsedOn.value;
+    setPaymentCategoryMode('one_time');
+  } else {
+    updateManualPaymentCategoryControls();
+  }
+}
+
+function initializeManualEntryControls() {
+  replaceSelectOptions(elements.manualPaymentMethod, manualPaymentMethods, manualPaymentMethods[0]);
+  replaceSelectOptions(
+    elements.manualInstallmentCount,
+    manualInstallmentCounts.map((value) => String(value)),
+    String(manualInstallmentCounts[0])
+  );
+  updateManualInstallmentNumbers();
+}
+
+function clearManualErrors() {
+  for (const error of Object.values(elements.manualErrors)) {
+    error.textContent = '';
+  }
+
+  for (const input of [
+    elements.manualUsedOn,
+    elements.manualMerchant,
+    elements.manualPaymentMethod,
+    elements.manualAmount,
+    elements.manualStatementPaymentOn,
+    elements.manualInstallmentCount,
+    elements.manualInstallmentNumber,
+  ]) {
+    input.removeAttribute('aria-invalid');
+  }
+}
+
+function setManualError(field, message) {
+  elements.manualErrors[field].textContent = message;
+}
+
+function renderManualErrors(errors) {
+  clearManualErrors();
+
+  const fieldInputs = {
+    usedOn: elements.manualUsedOn,
+    merchant: elements.manualMerchant,
+    paymentMethod: elements.manualPaymentMethod,
+    amount: elements.manualAmount,
+    statementPaymentOn: elements.manualStatementPaymentOn,
+    paymentCategory: elements.manualInstallmentCount,
+  };
+
+  for (const [field, message] of Object.entries(errors)) {
+    setManualError(field, message);
+    if (fieldInputs[field]) {
+      fieldInputs[field].setAttribute('aria-invalid', 'true');
+    }
+  }
+}
+
+function focusFirstManualError(errors) {
+  const fields = ['usedOn', 'merchant', 'paymentMethod', 'amount', 'statementPaymentOn', 'paymentCategory'];
+  const fieldInputs = {
+    usedOn: elements.manualUsedOn,
+    merchant: elements.manualMerchant,
+    paymentMethod: elements.manualPaymentMethod,
+    amount: elements.manualAmount,
+    statementPaymentOn: elements.manualStatementPaymentOn,
+    paymentCategory: elements.manualInstallmentCount,
+  };
+
+  const firstField = fields.find((field) => errors[field]);
+  if (firstField && fieldInputs[firstField]) {
+    fieldInputs[firstField].focus();
+  }
+}
+
+function manualPaymentCategoryValue() {
+  if (selectedPaymentCategoryMode() !== 'installment') {
+    return '1回';
+  }
+
+  return `均等 ${elements.manualInstallmentNumber.value}／${elements.manualInstallmentCount.value}`;
+}
+
+function validateManualEntryForm() {
+  const errors = {};
+  const usedOn = elements.manualUsedOn.value;
+  const merchant = elements.manualMerchant.value.trim();
+  const paymentMethod = elements.manualPaymentMethod.value;
+  const amount = normalizeManualAmount(elements.manualAmount.value);
+  const isCard = isManualCardPaymentMethod(paymentMethod);
+
+  if (!isValidDateValue(usedOn)) {
+    errors.usedOn = '有効な利用日を入力してください。';
+  }
+
+  if (merchant === '') {
+    errors.merchant = '店名・商品名を入力してください。';
+  } else if (merchant.length > 255) {
+    errors.merchant = '店名・商品名は255文字以内で入力してください。';
+  }
+
+  if (!manualPaymentMethods.includes(paymentMethod)) {
+    errors.paymentMethod = '決済方法を選択してください。';
+  }
+
+  if (amount === null) {
+    errors.amount = '1円以上の整数を入力してください。';
+  }
+
+  let statementPaymentOn = usedOn;
+  let paymentCategory = '1回';
+  if (isCard) {
+    statementPaymentOn = elements.manualStatementPaymentOn.value;
+    paymentCategory = manualPaymentCategoryValue();
+    if (!isValidDateValue(statementPaymentOn)) {
+      errors.statementPaymentOn = '有効な当月お支払日を入力してください。';
+    }
+
+    if (selectedPaymentCategoryMode() === 'installment') {
+      const installmentCount = Number(elements.manualInstallmentCount.value);
+      const installmentNumber = Number(elements.manualInstallmentNumber.value);
+      if (!manualInstallmentCounts.includes(installmentCount)) {
+        errors.paymentCategory = '分割回数を選択してください。';
+      } else if (!Number.isInteger(installmentNumber) || installmentNumber < 1 || installmentNumber > installmentCount) {
+        errors.paymentCategory = '何回目は分割回数以内で選択してください。';
+      }
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    renderManualErrors(errors);
+    focusFirstManualError(errors);
+    return null;
+  }
+
+  clearManualErrors();
+  return {
+    used_on: usedOn,
+    merchant,
+    payment_method: paymentMethod,
+    amount,
+    statement_payment_on: statementPaymentOn,
+    payment_category: paymentCategory,
+  };
+}
+
+function resetManualEntryForm() {
+  elements.manualEntryForm.reset();
+  clearManualErrors();
+
+  const today = localDateValue();
+  elements.manualUsedOn.value = today;
+  elements.manualStatementPaymentOn.value = today;
+  elements.manualPaymentMethod.value = manualPaymentMethods[0];
+  elements.manualInstallmentCount.value = String(manualInstallmentCounts[0]);
+  updateManualInstallmentNumbers();
+  setPaymentCategoryMode('one_time');
+  updateManualPaymentMethodControls();
+}
+
+function showManualEntryDialog() {
+  resetManualEntryForm();
+  if (elements.manualEntryDialog.open) {
+    elements.manualUsedOn.focus();
+    return;
+  }
+
+  if (typeof elements.manualEntryDialog.showModal === 'function') {
+    elements.manualEntryDialog.showModal();
+  } else {
+    elements.manualEntryDialog.setAttribute('open', '');
+  }
+  window.requestAnimationFrame(() => {
+    elements.manualUsedOn.focus();
+  });
+}
+
+function closeManualEntryDialog() {
+  if (typeof elements.manualEntryDialog.close === 'function' && elements.manualEntryDialog.open) {
+    elements.manualEntryDialog.close();
+    return;
+  }
+
+  elements.manualEntryDialog.removeAttribute('open');
+}
+
+function prepareNextManualEntry() {
+  clearManualErrors();
+  elements.manualMerchant.value = '';
+  elements.manualAmount.value = '';
+  updateManualPaymentMethodControls();
+  window.requestAnimationFrame(() => {
+    elements.manualMerchant.focus();
+  });
+}
+
+async function submitManualEntry(event) {
+  event.preventDefault();
+  const payload = validateManualEntryForm();
+  if (payload === null) {
+    return;
+  }
+
+  const submitButton = elements.manualEntryForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  try {
+    await api('api/transactions.php', {
+      method: 'POST',
+      json: payload,
+    });
+    state.importsOffset = 0;
+    await loadImports();
+    showToast('追加しました。');
+
+    if (elements.manualContinue.checked) {
+      prepareNextManualEntry();
+    } else {
+      closeManualEntryDialog();
+    }
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
 }
 
 function bindCommonEvents() {
@@ -302,6 +668,28 @@ function bindTransactionsEvents() {
 }
 
 function bindAdminEvents() {
+  initializeManualEntryControls();
+
+  elements.openManualDialogButton.addEventListener('click', showManualEntryDialog);
+
+  elements.cancelManualEntryButton.addEventListener('click', closeManualEntryDialog);
+
+  elements.manualEntryForm.addEventListener('submit', submitManualEntry);
+
+  elements.manualUsedOn.addEventListener('change', () => {
+    if (!isManualCardPaymentMethod(elements.manualPaymentMethod.value)) {
+      elements.manualStatementPaymentOn.value = elements.manualUsedOn.value;
+    }
+  });
+
+  elements.manualPaymentMethod.addEventListener('change', updateManualPaymentMethodControls);
+
+  for (const input of elements.manualPaymentCategoryMode) {
+    input.addEventListener('change', updateManualPaymentCategoryControls);
+  }
+
+  elements.manualInstallmentCount.addEventListener('change', updateManualInstallmentNumbers);
+
   elements.importForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(elements.importForm);
@@ -671,7 +1059,7 @@ function renderImports() {
     const row = createElement('tr');
     appendCell(row, '取込日時', item.imported_at);
     appendCell(row, '支払日', item.statement_payment_on);
-    appendCell(row, 'CSV', item.source_filename, 'wrap-cell');
+    appendCell(row, 'データ元', item.source_filename, 'wrap-cell');
     appendCell(row, '件数', item.row_count, 'number');
 
     const actionCell = createElement('td', { attrs: { 'data-label': '操作' } });
