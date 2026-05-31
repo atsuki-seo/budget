@@ -66,7 +66,7 @@ const tableFilterDefinitions = {
     {
       key: 'card_user',
       label: '利用者',
-      value: (transaction) => normalizeFilterValue(transaction.card_user),
+      value: (transaction) => normalizeCardUserFilterValue(transaction.card_user),
     },
     {
       key: 'payment_method',
@@ -1137,6 +1137,11 @@ async function loadTransactions() {
 
 function normalizeFilterValue(value) {
   const text = String(value ?? '').trim();
+  return text === '' ? '未設定' : text;
+}
+
+function normalizeCardUserFilterValue(value) {
+  const text = String(value ?? '').trim().replace(/\*+$/, '');
   return text === '' ? '未設定' : text;
 }
 
