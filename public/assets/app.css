@@ -318,6 +318,32 @@ td.wrap-cell {
   text-align: right;
 }
 
+.imports-table {
+  table-layout: fixed;
+}
+
+.imports-table th:nth-child(1),
+.imports-table td:nth-child(1) {
+  width: 170px;
+}
+
+.imports-table th:nth-child(2),
+.imports-table td:nth-child(2) {
+  width: 120px;
+}
+
+.imports-table th:nth-child(4),
+.imports-table td:nth-child(4) {
+  width: 96px;
+  padding-right: 24px;
+}
+
+.imports-table th:nth-child(5),
+.imports-table td:nth-child(5) {
+  width: 96px;
+  padding-left: 18px;
+}
+
 .dialog-form {
   width: min(100vw - 48px, 420px);
   display: grid;
@@ -515,6 +541,23 @@ dialog::backdrop {
 
   td.number {
     text-align: left;
+  }
+
+  .imports-table th,
+  .imports-table td {
+    width: auto;
+  }
+
+  .imports-table th:nth-child(n),
+  .imports-table td:nth-child(n) {
+    width: auto;
+  }
+
+  .imports-table th:nth-child(4),
+  .imports-table td:nth-child(4),
+  .imports-table th:nth-child(5),
+  .imports-table td:nth-child(5) {
+    padding: 10px 12px;
   }
 
   td.merchant,
