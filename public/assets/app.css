@@ -147,6 +147,27 @@ h2 {
   min-width: 0;
 }
 
+body[data-page="transactions"] .topbar {
+  position: static;
+}
+
+.transactions-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.summary-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px 16px;
+  padding: 10px clamp(16px, 4vw, 32px);
+  border-bottom: 1px solid var(--border);
+  background: rgb(255 255 255 / 94%);
+  backdrop-filter: blur(10px);
+}
+
 .layout {
   width: min(100% - 24px, 1480px);
   margin: 16px auto 32px;
@@ -154,17 +175,13 @@ h2 {
   gap: 16px;
 }
 
-.panel,
-.metric {
+.panel {
   min-width: 0;
+  padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
-}
-
-.panel {
-  padding: 16px;
 }
 
 .section-header {
@@ -175,21 +192,19 @@ h2 {
   margin-bottom: 14px;
 }
 
-.filters-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.filter-toggle {
-  display: none;
-}
-
 .filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(160px, 1fr));
   gap: 12px;
   align-items: end;
+}
+
+.summary-bar .filters {
+  grid-template-columns: repeat(2, minmax(140px, 220px)) auto;
+}
+
+.summary-bar .filters button {
+  align-self: end;
 }
 
 label {
@@ -211,28 +226,25 @@ label span {
   color: var(--text);
 }
 
-.summary-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+.summary-total {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.metric {
-  padding: 14px 16px;
-}
-
-.metric-label {
-  display: block;
+.summary-total span {
   color: var(--muted);
   font-size: 0.84rem;
-  margin-bottom: 6px;
+  white-space: nowrap;
 }
 
-.metric strong {
-  display: block;
+.summary-total strong {
   font-size: 1.35rem;
   line-height: 1.2;
   overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .stack {
@@ -356,21 +368,32 @@ dialog::backdrop {
 
 @media (max-width: 760px) {
   .topbar {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    gap: 10px;
     padding: 12px;
   }
 
-  .topbar-actions,
-  .filters-actions,
+  .topbar h1 {
+    word-break: keep-all;
+  }
+
   .pager {
     width: 100%;
   }
 
-  .topbar-actions button,
-  .filters-actions button,
   .pager button {
     flex: 1;
+  }
+
+  .topbar-actions {
+    flex: 0 1 auto;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .topbar-actions button {
+    flex: 0 1 auto;
+    padding-inline: 10px;
   }
 
   .layout {
@@ -383,28 +406,40 @@ dialog::backdrop {
     padding: 12px;
   }
 
-  .filters,
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .filter-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
   .filters {
+    grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .summary-bar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 8px;
+  }
+
+  .summary-bar .filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .summary-bar .filters button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .summary-total {
+    justify-content: space-between;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  .summary-total strong {
+    font-size: 1.2rem;
   }
 
   .stack button {
     width: 100%;
-  }
-
-  .metric {
-    min-width: 0;
-    padding: 12px;
   }
 
   .section-header {

@@ -21,7 +21,6 @@ const state = {
   defaultMonth: '',
   selectedMonthFrom: '',
   selectedMonthTo: '',
-  filtersExpanded: true,
 };
 
 const yen = new Intl.NumberFormat('ja-JP', {
@@ -139,7 +138,6 @@ function bindTransactionsElements() {
   elements.filtersForm = $('#filtersForm');
   elements.monthFromSelect = $('#filtersForm select[name="date_from_month"]');
   elements.monthToSelect = $('#filtersForm select[name="date_to_month"]');
-  elements.filtersToggleButton = $('#filtersToggleButton');
   elements.resetFiltersButton = $('#resetFiltersButton');
   elements.summaryAmount = $('#summaryAmount');
   elements.resultCount = $('#resultCount');
@@ -274,8 +272,6 @@ function bindCommonEvents() {
 }
 
 function bindTransactionsEvents() {
-  bindFiltersToggle();
-
   elements.filtersForm.addEventListener('submit', (event) => {
     event.preventDefault();
   });
@@ -337,37 +333,6 @@ function bindAdminEvents() {
     state.importsOffset += state.importsLimit;
     await loadImports();
   });
-}
-
-function bindFiltersToggle() {
-  const mobileQuery = window.matchMedia('(max-width: 760px)');
-  state.filtersExpanded = !mobileQuery.matches;
-
-  elements.filtersToggleButton.addEventListener('click', () => {
-    state.filtersExpanded = !state.filtersExpanded;
-    renderFiltersPanel(mobileQuery.matches);
-  });
-
-  const handleViewportChange = (event) => {
-    renderFiltersPanel(event.matches);
-  };
-
-  if (typeof mobileQuery.addEventListener === 'function') {
-    mobileQuery.addEventListener('change', handleViewportChange);
-  } else {
-    mobileQuery.addListener(handleViewportChange);
-  }
-
-  renderFiltersPanel(mobileQuery.matches);
-}
-
-function renderFiltersPanel(isMobile) {
-  elements.filtersToggleButton.hidden = !isMobile;
-
-  const expanded = !isMobile || state.filtersExpanded;
-  elements.filtersForm.hidden = !expanded;
-  elements.filtersToggleButton.setAttribute('aria-expanded', String(expanded));
-  elements.filtersToggleButton.textContent = expanded ? '条件を隠す' : '条件を表示';
 }
 
 async function loadSession() {

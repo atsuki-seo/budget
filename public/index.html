@@ -9,45 +9,38 @@
     <script type="module" src="assets/app.js"></script>
   </head>
   <body data-page="transactions">
-    <header class="topbar">
-      <div>
-        <h1>家計簿</h1>
-      </div>
-      <div class="topbar-actions">
-        <button id="loginButton" type="button">ログイン</button>
-        <button id="adminButton" type="button" hidden>管理画面</button>
-        <button id="logoutButton" class="secondary" type="button" hidden>ログアウト</button>
-      </div>
-    </header>
-
-    <main class="layout">
-      <section class="panel" aria-labelledby="filtersHeading">
-        <div class="section-header filters-header">
-          <h2 id="filtersHeading">検索条件</h2>
-          <div class="filters-actions">
-            <button id="filtersToggleButton" class="secondary filter-toggle" type="button" aria-expanded="true" aria-controls="filtersForm">条件を隠す</button>
-            <button id="resetFiltersButton" class="secondary" type="button" hidden>リセット</button>
-          </div>
+    <div class="transactions-sticky">
+      <header class="topbar">
+        <div>
+          <h1>家計簿</h1>
         </div>
-        <form id="filtersForm" class="filters">
-          <label>
-            <span>開始月</span>
-            <select name="date_from_month"></select>
-          </label>
-          <label>
-            <span>終了月</span>
-            <select name="date_to_month"></select>
-          </label>
-        </form>
-      </section>
+        <div class="topbar-actions">
+          <button id="loginButton" type="button">ログイン</button>
+          <button id="adminButton" type="button" hidden>管理</button>
+          <button id="logoutButton" class="secondary" type="button" hidden>ログアウト</button>
+        </div>
+      </header>
 
-      <section class="summary-grid" aria-label="集計">
-        <div class="metric">
-          <span class="metric-label">合計</span>
+      <section class="summary-bar" aria-label="集計条件と合計">
+        <form id="filtersForm" class="filters">
+          <label for="date_from_month">
+            <span>開始月</span>
+            <select id="date_from_month" name="date_from_month"></select>
+          </label>
+          <label for="date_to_month">
+            <span>終了月</span>
+            <select id="date_to_month" name="date_to_month"></select>
+          </label>
+          <button id="resetFiltersButton" class="secondary" type="button" hidden>リセット</button>
+        </form>
+        <div class="summary-total">
+          <span>合計</span>
           <strong id="summaryAmount">-</strong>
         </div>
       </section>
+    </div>
 
+    <main class="layout">
       <section class="panel" aria-labelledby="transactionsHeading">
         <div class="section-header table-header">
           <div>
