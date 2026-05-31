@@ -166,6 +166,7 @@ function bindAdminElements() {
   elements.manualEntryDialog = $('#manualEntryDialog');
   elements.manualEntryForm = $('#manualEntryForm');
   elements.cancelManualEntryButton = $('#cancelManualEntryButton');
+  elements.manualUsedOnLabel = $('#manualUsedOnLabel');
   elements.manualUsedOn = $('#manualUsedOn');
   elements.manualMerchant = $('#manualMerchant');
   elements.manualPaymentMethod = $('#manualPaymentMethod');
@@ -311,6 +312,7 @@ function updateManualPaymentCategoryControls() {
 
 function updateManualPaymentMethodControls() {
   const isCard = isManualCardPaymentMethod(elements.manualPaymentMethod.value);
+  elements.manualUsedOnLabel.textContent = isCard ? '利用日' : '支払日';
   elements.manualCardDetails.hidden = !isCard;
   elements.manualStatementPaymentOn.disabled = !isCard;
   elements.manualInstallmentCount.disabled = !isCard;
@@ -413,7 +415,7 @@ function validateManualEntryForm() {
   const isCard = isManualCardPaymentMethod(paymentMethod);
 
   if (!isValidDateValue(usedOn)) {
-    errors.usedOn = '有効な利用日を入力してください。';
+    errors.usedOn = isCard ? '有効な利用日を入力してください。' : '有効な支払日を入力してください。';
   }
 
   if (merchant === '') {
@@ -436,7 +438,7 @@ function validateManualEntryForm() {
     statementPaymentOn = elements.manualStatementPaymentOn.value;
     paymentCategory = manualPaymentCategoryValue();
     if (!isValidDateValue(statementPaymentOn)) {
-      errors.statementPaymentOn = '有効な当月お支払日を入力してください。';
+      errors.statementPaymentOn = '有効な支払日を入力してください。';
     }
 
     if (selectedPaymentCategoryMode() === 'installment') {
@@ -985,7 +987,7 @@ function renderTransactions() {
 
   if (state.transactions.length === 0) {
     const row = createElement('tr');
-    const cell = createElement('td', { className: 'empty', text: '明細なし', attrs: { colspan: 10 } });
+    const cell = createElement('td', { className: 'empty', text: '明細なし', attrs: { colspan: 9 } });
     row.append(cell);
     elements.transactionsBody.replaceChildren(row);
     return;
@@ -993,7 +995,7 @@ function renderTransactions() {
 
   const rows = state.transactions.map((transaction) => {
     const row = createElement('tr');
-    appendCell(row, '利用日', formatDate(transaction.used_on));
+    appendCell(row, '支払日', formatDate(transaction.statement_payment_on));
     appendCell(row, '店名', transaction.merchant, 'merchant');
     appendCell(row, '利用者', transaction.card_user);
     appendCell(row, '決済方法', transaction.payment_method);
@@ -1002,7 +1004,6 @@ function renderTransactions() {
     appendCell(row, '利用金額', formatCurrency(transaction.usage_amount), 'number');
     appendCell(row, '繰越', formatCurrency(transaction.carried_forward_amount), 'number');
     appendCell(row, '調整', formatCurrency(transaction.adjustment_amount), 'number');
-    appendCell(row, '当月お支払日', formatDate(transaction.statement_payment_on));
     return row;
   });
 
