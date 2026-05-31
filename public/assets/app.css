@@ -6,8 +6,11 @@
   --text: #17202c;
   --muted: #667085;
   --border: #d8dee8;
-  --primary: #2563eb;
-  --primary-strong: #1d4ed8;
+  --primary: #5f6f49;
+  --primary-strong: #4e5d3c;
+  --snackbar-bg: #fff7d8;
+  --snackbar-border: #e6c95a;
+  --snackbar-text: #b42318;
   --danger: #b42318;
   --success: #047857;
   --warning: #b54708;
@@ -115,6 +118,18 @@ h1 {
 h2 {
   font-size: 1rem;
   line-height: 1.35;
+}
+
+.brand-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
 }
 
 .muted {
@@ -373,11 +388,11 @@ dialog::backdrop {
   bottom: 16px;
   z-index: 30;
   width: min(100% - 32px, 440px);
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--snackbar-border);
   border-radius: 8px;
   padding: 12px 14px;
-  background: #eff6ff;
-  color: #173b75;
+  background: var(--snackbar-bg);
+  color: var(--snackbar-text);
   box-shadow: 0 12px 32px rgb(16 24 40 / 18%);
 }
 
