@@ -34,6 +34,13 @@ function test_parse(string $csv): array
     }
 }
 
+function test_parse_cp932(string $csv): array
+{
+    $encoded = iconv('UTF-8', 'CP932', $csv);
+    test_assert(is_string($encoded), 'CP932 test CSV is encoded');
+    return test_parse($encoded);
+}
+
 function test_expect_invalid(string $csv, string $message): void
 {
     try {
@@ -84,5 +91,25 @@ $duplicates = test_parse($header
 test_assert(count($duplicates['rows']) === 2, 'duplicate CSV rows are preserved');
 test_assert(!array_key_exists('identity_hash', $duplicates['rows'][0]), 'identity hash is not returned');
 test_assert(!array_key_exists('occurrence_no', $duplicates['rows'][0]), 'occurrence number is not returned');
+
+$bankHeader = '"操作日(年)","操作日(月)","操作日(日)","操作時刻(時)","操作時刻(分)","操作時刻(秒)","取引順番号","摘要","お支払金額","お預り金額","残高","メモ"' . "\r\n";
+$bank = test_parse_cp932($bankHeader
+    . '"2026","5","20","1","13","58","0000101","DUMMY_BANK_INCOME_SOURCE","","111111","900001",""' . "\r\n"
+    . '"2026","5","27","1","36","23","0000101","DUMMY_BANK_EXPENSE_MERCHANT　　　　　　　","22222","","877779",""' . "\r\n"
+    . '"2026","5","27","1","46","6","0000301","DUMMY_EXCLUDED_CARD_PAYMENT","44444","","800002",""' . "\r\n"
+    . '"2026","5","31","12","17","4","0000101","DUMMY_EXCLUDED_TRANSFER","333333","","700003",""' . "\r\n");
+
+test_assert($bank['source_type'] === 'bank_csv', 'CP932 bank CSV source type is detected');
+test_assert($bank['date_from'] === '2026-05-20', 'bank CSV date range starts from the first operation date');
+test_assert($bank['date_to'] === '2026-05-31', 'bank CSV date range ends at the last operation date');
+test_assert($bank['statement_payment_on'] === '2026-05-31', 'bank CSV import date is the last operation date');
+test_assert(count($bank['rows']) === 1, 'bank CSV excludes income and configured merchants');
+test_assert($bank['rows'][0]['fields']['used_on'] === '2026-05-27', 'bank CSV used date is normalized');
+test_assert($bank['rows'][0]['fields']['statement_payment_on'] === '2026-05-27', 'bank CSV payment date matches used date');
+test_assert($bank['rows'][0]['fields']['merchant'] === 'DUMMY_BANK_EXPENSE_MERCHANT', 'bank CSV merchant is trimmed');
+test_assert($bank['rows'][0]['fields']['payment_method'] === '銀行口座', 'bank CSV payment method is fixed');
+test_assert($bank['rows'][0]['fields']['payment_category'] === '1回', 'bank CSV payment category is fixed');
+test_assert($bank['rows'][0]['fields']['usage_amount'] === 22222, 'bank CSV usage amount is parsed');
+test_assert($bank['rows'][0]['fields']['billing_amount'] === 22222, 'bank CSV billing amount is parsed');
 
 echo "OK\n";

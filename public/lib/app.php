@@ -16,6 +16,21 @@ const BUDGET_REQUIRED_HEADERS = [
     '当月お支払日',
 ];
 
+const BUDGET_BANK_REQUIRED_HEADERS = [
+    '操作日(年)',
+    '操作日(月)',
+    '操作日(日)',
+    '操作時刻(時)',
+    '操作時刻(分)',
+    '操作時刻(秒)',
+    '取引順番号',
+    '摘要',
+    'お支払金額',
+    'お預り金額',
+    '残高',
+    'メモ',
+];
+
 const BUDGET_CARD_PAYMENT_METHODS = [
     'Apple Pay',
     'Apple Pay QUICPay',
@@ -301,6 +316,55 @@ function budget_clean_text($value, int $maxLength, string $field): string
     return $text;
 }
 
+function budget_trim_import_text(string $text): string
+{
+    $trimmed = preg_replace('/^[\s\x{3000}]+|[\s\x{3000}]+$/u', '', $text);
+    if (!is_string($trimmed)) {
+        throw new InvalidArgumentException('Imported text must be UTF-8 text.');
+    }
+
+    return $trimmed;
+}
+
+function budget_payment_import_exclusion_merchants(): array
+{
+    static $exclusions = null;
+
+    if ($exclusions !== null) {
+        return $exclusions;
+    }
+
+    $path = __DIR__ . '/payment_import_exclusions.php';
+    $loaded = is_file($path) ? require $path : [];
+    if (!is_array($loaded)) {
+        throw new RuntimeException('payment_import_exclusions.php must return an array.');
+    }
+
+    $merchants = $loaded['bank_merchant_exact'] ?? [];
+    if (!is_array($merchants)) {
+        throw new RuntimeException('payment_import_exclusions.php bank_merchant_exact must be an array.');
+    }
+
+    $exclusions = [];
+    foreach ($merchants as $merchant) {
+        if (!is_scalar($merchant)) {
+            throw new RuntimeException('payment_import_exclusions.php bank_merchant_exact values must be text.');
+        }
+
+        $merchant = budget_trim_import_text((string)$merchant);
+        if ($merchant !== '') {
+            $exclusions[$merchant] = true;
+        }
+    }
+
+    return $exclusions;
+}
+
+function budget_is_payment_import_merchant_excluded(string $merchant): bool
+{
+    return isset(budget_payment_import_exclusion_merchants()[$merchant]);
+}
+
 function budget_parse_manual_date($value, string $field): string
 {
     if (!is_scalar($value)) {
@@ -471,12 +535,12 @@ function budget_parse_csv_amount(string $value, string $field, int $line): int
     return (int)$value;
 }
 
-function budget_normalize_csv_header(string $header): string
+function budget_try_normalize_csv_header(string $header): ?string
 {
     $header = str_replace("\xEF\xBB\xBF", '', $header);
     $header = preg_replace('/^\x{FEFF}/u', '', $header);
     if (!is_string($header)) {
-        throw new InvalidArgumentException('CSV header contains invalid UTF-8.');
+        return null;
     }
 
     $header = trim($header);
@@ -485,6 +549,77 @@ function budget_normalize_csv_header(string $header): string
     }
 
     return trim($header);
+}
+
+function budget_normalize_csv_header(string $header): string
+{
+    $normalized = budget_try_normalize_csv_header($header);
+    if ($normalized === null) {
+        throw new InvalidArgumentException('CSV header contains invalid UTF-8.');
+    }
+
+    return $normalized;
+}
+
+function budget_csv_contents_handle(string $contents)
+{
+    $handle = fopen('php://temp', 'r+b');
+    if ($handle === false) {
+        throw new RuntimeException('CSV buffer cannot be opened.');
+    }
+
+    if (fwrite($handle, $contents) === false) {
+        fclose($handle);
+        throw new RuntimeException('CSV buffer cannot be written.');
+    }
+
+    rewind($handle);
+    return $handle;
+}
+
+function budget_csv_header_map(array $headers): ?array
+{
+    $headerMap = [];
+    foreach ($headers as $index => $header) {
+        $header = budget_try_normalize_csv_header((string)$header);
+        if ($header === null) {
+            return null;
+        }
+
+        if ($header === '') {
+            continue;
+        }
+
+        if (isset($headerMap[$header])) {
+            throw new InvalidArgumentException("CSV header $header is duplicated.");
+        }
+
+        $headerMap[$header] = $index;
+    }
+
+    return $headerMap;
+}
+
+function budget_csv_has_required_headers(array $headerMap, array $requiredHeaders): bool
+{
+    foreach ($requiredHeaders as $requiredHeader) {
+        if (!array_key_exists($requiredHeader, $headerMap)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function budget_csv_required_row(array $data, array $headerMap, array $requiredHeaders): array
+{
+    $row = [];
+    foreach ($requiredHeaders as $header) {
+        $index = $headerMap[$header];
+        $row[$header] = isset($data[$index]) ? (string)$data[$index] : '';
+    }
+
+    return $row;
 }
 
 function budget_normalize_csv_row(array $row, int $line): array
@@ -523,38 +658,90 @@ function budget_normalize_csv_row(array $row, int $line): array
     ];
 }
 
-function budget_parse_csv_file(string $path, int $maxRows = 5000): array
+function budget_parse_bank_csv_number(string $value, string $field, int $line, int $min, int $max): int
 {
-    $handle = fopen($path, 'rb');
-    if ($handle === false) {
-        throw new InvalidArgumentException('CSV file cannot be opened.');
+    $value = trim($value);
+    if ($value === '' || !preg_match('/^\d+$/', $value)) {
+        throw new InvalidArgumentException("$field on line $line must be an integer.");
     }
+
+    $number = (int)$value;
+    if ($number < $min || $number > $max) {
+        throw new InvalidArgumentException("$field on line $line is invalid.");
+    }
+
+    return $number;
+}
+
+function budget_parse_bank_csv_date(array $row, int $line): string
+{
+    $year = budget_parse_bank_csv_number($row['操作日(年)'], '操作日(年)', $line, 1000, 9999);
+    $month = budget_parse_bank_csv_number($row['操作日(月)'], '操作日(月)', $line, 1, 12);
+    $day = budget_parse_bank_csv_number($row['操作日(日)'], '操作日(日)', $line, 1, 31);
+
+    if (!checkdate($month, $day, $year)) {
+        throw new InvalidArgumentException("操作日 on line $line is invalid.");
+    }
+
+    return sprintf('%04d-%02d-%02d', $year, $month, $day);
+}
+
+function budget_validate_bank_csv_time(array $row, int $line): void
+{
+    budget_parse_bank_csv_number($row['操作時刻(時)'], '操作時刻(時)', $line, 0, 23);
+    budget_parse_bank_csv_number($row['操作時刻(分)'], '操作時刻(分)', $line, 0, 59);
+    budget_parse_bank_csv_number($row['操作時刻(秒)'], '操作時刻(秒)', $line, 0, 59);
+}
+
+function budget_normalize_bank_csv_row(array $row, int $line, string $usedOn): ?array
+{
+    if (trim($row['お支払金額']) === '') {
+        return null;
+    }
+
+    $amount = budget_parse_csv_amount($row['お支払金額'], 'お支払金額', $line);
+    if ($amount <= 0) {
+        throw new InvalidArgumentException("お支払金額 on line $line must be greater than 0.");
+    }
+
+    $merchant = budget_clean_text(budget_trim_import_text($row['摘要']), 255, "摘要 on line $line");
+    if ($merchant === '') {
+        throw new InvalidArgumentException("摘要 on line $line is required.");
+    }
+
+    if (budget_is_payment_import_merchant_excluded($merchant)) {
+        return null;
+    }
+
+    return [
+        'fields' => [
+            'statement_payment_on' => $usedOn,
+            'used_on' => $usedOn,
+            'merchant' => $merchant,
+            'card_user' => '本人',
+            'payment_method' => '銀行口座',
+            'payment_category' => '1回',
+            'usage_amount' => $amount,
+            'billing_amount' => $amount,
+            'carried_forward_amount' => 0,
+            'adjustment_amount' => 0,
+        ],
+    ];
+}
+
+function budget_parse_card_csv_contents(string $contents, int $maxRows): ?array
+{
+    $handle = budget_csv_contents_handle($contents);
 
     try {
         $headers = fgetcsv($handle);
         if (!is_array($headers)) {
-            throw new InvalidArgumentException('CSV header is missing.');
+            return null;
         }
 
-        $headerMap = [];
-        foreach ($headers as $index => $header) {
-            $header = budget_normalize_csv_header((string)$header);
-            if ($header === '') {
-                continue;
-            }
-
-            if (isset($headerMap[$header])) {
-                throw new InvalidArgumentException("CSV header $header is duplicated.");
-            }
-
-            $headerMap[$header] = $index;
-        }
-
-        foreach (BUDGET_REQUIRED_HEADERS as $requiredHeader) {
-            if (!array_key_exists($requiredHeader, $headerMap)) {
-                $detected = implode(', ', array_slice(array_keys($headerMap), 0, 8));
-                throw new InvalidArgumentException("CSV header $requiredHeader is required. Detected headers: $detected");
-            }
+        $headerMap = budget_csv_header_map($headers);
+        if ($headerMap === null || !budget_csv_has_required_headers($headerMap, BUDGET_REQUIRED_HEADERS)) {
+            return null;
         }
 
         $rows = [];
@@ -571,12 +758,7 @@ function budget_parse_csv_file(string $path, int $maxRows = 5000): array
                 throw new InvalidArgumentException("CSV row limit is $maxRows.");
             }
 
-            $row = [];
-            foreach (BUDGET_REQUIRED_HEADERS as $header) {
-                $index = $headerMap[$header];
-                $row[$header] = isset($data[$index]) ? (string)$data[$index] : '';
-            }
-
+            $row = budget_csv_required_row($data, $headerMap, BUDGET_REQUIRED_HEADERS);
             $normalized = budget_normalize_csv_row($row, $line);
             $rowPaymentOn = $normalized['fields']['statement_payment_on'];
             if ($statementPaymentOn === null) {
@@ -593,12 +775,101 @@ function budget_parse_csv_file(string $path, int $maxRows = 5000): array
         }
 
         return [
+            'source_type' => 'csv',
             'statement_payment_on' => $statementPaymentOn,
+            'date_from' => $statementPaymentOn,
+            'date_to' => $statementPaymentOn,
             'rows' => $rows,
         ];
     } finally {
         fclose($handle);
     }
+}
+
+function budget_parse_bank_csv_contents(string $contents, int $maxRows): ?array
+{
+    $handle = budget_csv_contents_handle($contents);
+
+    try {
+        $headers = fgetcsv($handle);
+        if (!is_array($headers)) {
+            return null;
+        }
+
+        $headerMap = budget_csv_header_map($headers);
+        if ($headerMap === null || !budget_csv_has_required_headers($headerMap, BUDGET_BANK_REQUIRED_HEADERS)) {
+            return null;
+        }
+
+        $rows = [];
+        $dateFrom = null;
+        $dateTo = null;
+        $line = 1;
+
+        while (($data = fgetcsv($handle)) !== false) {
+            $line++;
+            if ($data === [null] || $data === ['']) {
+                continue;
+            }
+
+            if ($line - 1 > $maxRows) {
+                throw new InvalidArgumentException("CSV row limit is $maxRows.");
+            }
+
+            $row = budget_csv_required_row($data, $headerMap, BUDGET_BANK_REQUIRED_HEADERS);
+            $usedOn = budget_parse_bank_csv_date($row, $line);
+            budget_validate_bank_csv_time($row, $line);
+
+            if ($dateFrom === null || $usedOn < $dateFrom) {
+                $dateFrom = $usedOn;
+            }
+            if ($dateTo === null || $usedOn > $dateTo) {
+                $dateTo = $usedOn;
+            }
+
+            $normalized = budget_normalize_bank_csv_row($row, $line, $usedOn);
+            if ($normalized !== null) {
+                $rows[] = $normalized;
+            }
+        }
+
+        if ($dateFrom === null || $dateTo === null) {
+            throw new InvalidArgumentException('CSV has no transaction rows.');
+        }
+
+        return [
+            'source_type' => 'bank_csv',
+            'statement_payment_on' => $dateTo,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'rows' => $rows,
+        ];
+    } finally {
+        fclose($handle);
+    }
+}
+
+function budget_parse_csv_file(string $path, int $maxRows = 5000): array
+{
+    $contents = file_get_contents($path);
+    if ($contents === false) {
+        throw new InvalidArgumentException('CSV file cannot be opened.');
+    }
+
+    $parsed = budget_parse_card_csv_contents($contents, $maxRows);
+    if ($parsed !== null) {
+        return $parsed;
+    }
+
+    $converted = @iconv('CP932', 'UTF-8', $contents);
+    if (is_string($converted)) {
+        $parsed = budget_parse_bank_csv_contents($converted, $maxRows);
+        if ($parsed !== null) {
+            return $parsed;
+        }
+    }
+
+    throw new InvalidArgumentException('CSV header is unsupported.');
 }
 
 function budget_safe_upload_name(string $name): string
@@ -624,26 +895,67 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
     $pdo->beginTransaction();
 
     try {
-        $deleteCsvImports = $pdo->prepare(
-            "DELETE FROM imports
-             WHERE statement_payment_on = ?
-               AND source_type = 'csv'"
-        );
-        $deleteCsvImports->execute([$parsed['statement_payment_on']]);
+        if ($parsed['source_type'] === 'bank_csv') {
+            $deleteBankTransactions = $pdo->prepare(
+                "DELETE t
+                 FROM transactions t
+                 INNER JOIN imports i ON i.id = t.import_id
+                 WHERE i.source_type = 'bank_csv'
+                   AND t.used_on BETWEEN ? AND ?"
+            );
+            $deleteBankTransactions->execute([$parsed['date_from'], $parsed['date_to']]);
 
-        $cardMethodPlaceholders = implode(', ', array_fill(0, count(BUDGET_CARD_PAYMENT_METHODS), '?'));
-        $deleteCardManualImports = $pdo->prepare(
-            "DELETE i
-             FROM imports i
-             INNER JOIN transactions t ON t.import_id = i.id
-             WHERE i.statement_payment_on = ?
-               AND i.source_type = 'manual'
-               AND t.payment_method IN ($cardMethodPlaceholders)"
-        );
-        $deleteCardManualImports->execute(array_merge(
-            [$parsed['statement_payment_on']],
-            BUDGET_CARD_PAYMENT_METHODS
-        ));
+            $deleteEmptyBankImports = $pdo->prepare(
+                "DELETE i
+                 FROM imports i
+                 LEFT JOIN transactions t ON t.import_id = i.id
+                 WHERE i.source_type = 'bank_csv'
+                   AND t.id IS NULL"
+            );
+            $deleteEmptyBankImports->execute();
+
+            $updateBankImportCounts = $pdo->prepare(
+                "UPDATE imports i
+                 SET row_count = (
+                     SELECT COUNT(*)
+                     FROM transactions t
+                     WHERE t.import_id = i.id
+                 )
+                 WHERE i.source_type = 'bank_csv'"
+            );
+            $updateBankImportCounts->execute();
+
+            $deleteManualBankImports = $pdo->prepare(
+                "DELETE i
+                 FROM imports i
+                 INNER JOIN transactions t ON t.import_id = i.id
+                 WHERE i.source_type = 'manual'
+                   AND t.payment_method = '銀行口座'
+                   AND t.used_on BETWEEN ? AND ?"
+            );
+            $deleteManualBankImports->execute([$parsed['date_from'], $parsed['date_to']]);
+        } else {
+            $deleteCsvImports = $pdo->prepare(
+                "DELETE FROM imports
+                 WHERE statement_payment_on = ?
+                   AND source_type = 'csv'"
+            );
+            $deleteCsvImports->execute([$parsed['statement_payment_on']]);
+
+            $cardMethodPlaceholders = implode(', ', array_fill(0, count(BUDGET_CARD_PAYMENT_METHODS), '?'));
+            $deleteCardManualImports = $pdo->prepare(
+                "DELETE i
+                 FROM imports i
+                 INNER JOIN transactions t ON t.import_id = i.id
+                 WHERE i.statement_payment_on = ?
+                   AND i.source_type = 'manual'
+                   AND t.payment_method IN ($cardMethodPlaceholders)"
+            );
+            $deleteCardManualImports->execute(array_merge(
+                [$parsed['statement_payment_on']],
+                BUDGET_CARD_PAYMENT_METHODS
+            ));
+        }
 
         $insertImport = $pdo->prepare(
             'INSERT INTO imports
@@ -651,7 +963,7 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
              VALUES (?, ?, ?, ?)'
         );
         $insertImport->execute([
-            'csv',
+            $parsed['source_type'],
             $parsed['statement_payment_on'],
             $sourceName,
             count($parsed['rows']),
@@ -687,6 +999,7 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
 
         return [
             'id' => $importId,
+            'source_type' => $parsed['source_type'],
             'statement_payment_on' => $parsed['statement_payment_on'],
             'row_count' => count($parsed['rows']),
         ];

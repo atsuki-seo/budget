@@ -9,6 +9,7 @@ public/budget-config.php
 
 # Local budget exports
 detail*.csv
+bank*.csv
 
 # Local SSH material for deployment setup
 .ssh/

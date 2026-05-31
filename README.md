@@ -54,7 +54,7 @@ Admin API:
 All API responses are JSON with `Cache-Control: no-store`. Mutating admin requests require both an authenticated PHP session and the `X-CSRF-Token` header.
 
 `GET /api/imports.php` defaults to `limit=5`, supports `offset`, and returns import log rows in reverse import order.
-Each import row includes `source_type`, where `csv` is an uploaded PayPay card CSV and `manual` is a single hand-entered expense.
+Each import row includes `source_type`, where `csv` is an uploaded PayPay card CSV, `bank_csv` is an uploaded bank-account CSV, and `manual` is a single hand-entered expense.
 `DELETE /api/imports.php?id=...` physically deletes the import row. Transactions still attached to that import are deleted by the foreign key cascade.
 
 ## Initial Xserver Setup
@@ -128,11 +128,18 @@ For card payment methods, the form accepts `1回` or `均等 N／M`; `M` must be
 
 1. Open `https://example.com/budget/admin/`.
 2. Enter the admin password in the login dialog.
-3. Upload the card-detail CSV from the `PayPayカード情報の取り込み` screen.
+3. Upload the payment CSV from the `決済情報の取り込み` screen.
 
-The importer validates CSV headers and values, not file extensions. Each CSV must contain exactly one `当月お支払日`.
+The importer validates CSV headers and values, not file extensions.
 
-Re-uploading the same payment-month CSV performs a month replacement:
+Supported CSV formats:
+
+- PayPay card detail CSV in UTF-8. Each file must contain exactly one `当月お支払日`.
+- Bank-account CSV in CP932/SJIS with the bank export headers. Only positive `お支払金額` rows are imported as `銀行口座`; `操作日` becomes both `used_on` and `statement_payment_on`, `摘要` becomes `merchant`, and `お支払金額` becomes both `usage_amount` and `billing_amount`.
+
+Bank-account merchant exclusions are configured in `public/lib/payment_import_exclusions.php` under `bank_merchant_exact`. Matching is exact after trimming leading and trailing ASCII/full-width whitespace.
+
+Re-uploading the same PayPay payment-month CSV performs a month replacement:
 
 - Existing CSV imports with the same `statement_payment_on` are physically deleted first.
 - Existing card-payment manual imports with the same `statement_payment_on` are physically deleted first.
@@ -140,7 +147,13 @@ Re-uploading the same payment-month CSV performs a month replacement:
 - All rows from the uploaded CSV are inserted and attached to the new `imports.id`.
 - Other payment dates are not changed.
 
-The CSV file is treated as the source of truth for PayPay card rows. Per-row diff tracking, transaction soft delete/restore, budget date/amount derivation, and labels are not part of the current schema or API.
+Re-uploading a bank-account CSV replaces the operation-date range covered by that CSV:
+
+- Existing `bank_csv` transactions in the range are physically deleted first.
+- Existing manual `銀行口座` imports in the range are physically deleted first.
+- Rows excluded by `bank_merchant_exact` and income rows with only `お預り金額` are not inserted.
+
+The CSV file is treated as the source of truth for imported payment rows. Per-row diff tracking, transaction soft delete/restore, budget date/amount derivation, and labels are not part of the current schema or API.
 
 ## Deployment
 
