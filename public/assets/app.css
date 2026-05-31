@@ -698,6 +698,10 @@ dialog::backdrop {
   gap: 8px;
 }
 
+.dialog-delete {
+  margin-right: auto;
+}
+
 .dialog-close {
   position: absolute;
   top: 10px;
@@ -1012,6 +1016,10 @@ dialog::backdrop {
 
   .dialog-actions {
     flex-direction: column-reverse;
+  }
+
+  .dialog-delete {
+    margin-right: 0;
   }
 
   .dialog-actions button {

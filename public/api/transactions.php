@@ -5,7 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/app.php';
 
 try {
-    $method = budget_require_method(['GET', 'POST', 'PUT']);
+    $method = budget_require_method(['GET', 'POST', 'PUT', 'DELETE']);
 
     if ($method === 'POST') {
         budget_require_admin();
@@ -26,6 +26,17 @@ try {
         $transaction = budget_update_transaction($pdo, $id, budget_request_data());
 
         budget_json_response(['transaction' => $transaction]);
+    }
+
+    if ($method === 'DELETE') {
+        budget_require_admin();
+        budget_require_csrf();
+
+        $id = budget_required_id(isset($_GET['id']) ? (string)$_GET['id'] : null);
+        $pdo = budget_pdo();
+        $deleted = budget_delete_transaction($pdo, $id);
+
+        budget_json_response(['deleted' => true] + $deleted);
     }
 
     $pdo = budget_pdo();

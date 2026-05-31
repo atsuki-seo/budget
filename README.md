@@ -51,6 +51,7 @@ Admin API:
 - `DELETE /api/session.php`
 - `POST /api/transactions.php`
 - `PUT /api/transactions.php?id=...`
+- `DELETE /api/transactions.php?id=...`
 - `GET /api/manual_transactions.php`
 - `POST /api/imports.php`
 - `GET /api/imports.php`
@@ -61,6 +62,8 @@ All API responses are JSON with `Cache-Control: no-store`. Mutating admin reques
 `GET /api/manual_transactions.php` defaults to `transaction_type=expense`, `limit=5`, supports `transaction_type=expense|income` and `offset`, and returns hand-entered transactions in reverse creation order.
 
 `PUT /api/transactions.php?id=...` updates an existing transaction without changing its `transaction_type`. When the transaction belongs to a single-row manual import, the related `imports.statement_payment_on` is synchronized to the updated payment or received date. CSV and bank CSV import log dates are not changed.
+
+`DELETE /api/transactions.php?id=...` deletes one transaction. Single-row manual imports are deleted through their import row, while CSV and bank CSV imports keep their import row with `row_count` synchronized to the remaining transaction count.
 
 `GET /api/imports.php` defaults to `limit=5`, supports `offset` and optional comma-separated `source_types`, and returns import log rows in reverse import order.
 Each import row includes `source_type`, where `csv` is an uploaded PayPay card CSV, `bank_csv` is an uploaded bank-account CSV, and `manual` is a single hand-entered transaction.

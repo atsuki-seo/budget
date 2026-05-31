@@ -1401,3 +1401,67 @@ function budget_update_transaction(PDO $pdo, int $id, array $data): array
         throw $exception;
     }
 }
+
+function budget_delete_transaction(PDO $pdo, int $id): array
+{
+    $pdo->beginTransaction();
+
+    try {
+        $select = $pdo->prepare(
+            "SELECT
+                t.id,
+                t.import_id,
+                i.source_type,
+                (
+                    SELECT COUNT(*)
+                    FROM transactions related
+                    WHERE related.import_id = t.import_id
+                ) AS import_transaction_count
+             FROM transactions t
+             LEFT JOIN imports i ON i.id = t.import_id
+             WHERE t.id = ?
+             FOR UPDATE"
+        );
+        $select->execute([$id]);
+        $existing = $select->fetch();
+        if (!$existing) {
+            throw new InvalidArgumentException('Transaction was not found.');
+        }
+
+        $importId = $existing['import_id'] === null ? null : (int)$existing['import_id'];
+        $importTransactionCount = (int)$existing['import_transaction_count'];
+
+        if ($importId !== null && $existing['source_type'] === 'manual' && $importTransactionCount === 1) {
+            $deleteImport = $pdo->prepare('DELETE FROM imports WHERE id = ?');
+            $deleteImport->execute([$importId]);
+        } else {
+            $deleteTransaction = $pdo->prepare('DELETE FROM transactions WHERE id = ?');
+            $deleteTransaction->execute([$id]);
+
+            if ($importId !== null) {
+                $updateImportCount = $pdo->prepare(
+                    'UPDATE imports
+                     SET row_count = (
+                         SELECT COUNT(*)
+                         FROM transactions t
+                         WHERE t.import_id = imports.id
+                     )
+                     WHERE id = ?'
+                );
+                $updateImportCount->execute([$importId]);
+            }
+        }
+
+        $pdo->commit();
+
+        return [
+            'id' => $id,
+            'import_id' => $importId,
+        ];
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+}

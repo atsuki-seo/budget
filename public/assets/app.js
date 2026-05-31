@@ -202,6 +202,7 @@ function bindCommonElements() {
   elements.closeTransactionDialogButton = $('#closeTransactionDialogButton');
   elements.cancelTransactionButton = $('#cancelTransactionButton');
   elements.saveTransactionButton = $('#saveTransactionButton');
+  elements.deleteTransactionButton = $('#deleteTransactionButton');
   elements.transactionDialogTitle = $('#transactionDialogTitle');
   elements.transactionReadonlyNotice = $('#transactionReadonlyNotice');
   elements.transactionStatementPaymentOnLabel = $('#transactionStatementPaymentOnLabel');
@@ -894,6 +895,7 @@ function populateTransactionDialog(transaction) {
   elements.transactionDialogTitle.textContent = isIncome ? '収入明細' : '支出明細';
   elements.transactionReadonlyNotice.hidden = canSave;
   elements.saveTransactionButton.hidden = !canSave;
+  elements.deleteTransactionButton.hidden = !canSave;
   elements.cancelTransactionButton.textContent = canSave ? 'キャンセル' : '閉じる';
 
   elements.transactionStatementPaymentOnLabel.textContent = isIncome ? '受取日' : '支払日';
@@ -1094,6 +1096,7 @@ async function submitTransactionEdit(event) {
 
   const transactionId = state.editingTransaction.id;
   elements.saveTransactionButton.disabled = true;
+  elements.deleteTransactionButton.disabled = true;
   try {
     await api(`api/transactions.php?id=${encodeURIComponent(transactionId)}`, {
       method: 'PUT',
@@ -1106,6 +1109,35 @@ async function submitTransactionEdit(event) {
     showToast(error.message);
   } finally {
     elements.saveTransactionButton.disabled = false;
+    elements.deleteTransactionButton.disabled = false;
+  }
+}
+
+async function deleteCurrentTransaction() {
+  const transaction = state.editingTransaction;
+  if (!state.loggedIn || !transaction) {
+    closeTransactionDialog();
+    return;
+  }
+
+  if (!window.confirm('この明細を削除しますか。')) {
+    return;
+  }
+
+  elements.saveTransactionButton.disabled = true;
+  elements.deleteTransactionButton.disabled = true;
+  try {
+    await api(`api/transactions.php?id=${encodeURIComponent(transaction.id)}`, {
+      method: 'DELETE',
+    });
+    closeTransactionDialog();
+    await reloadAfterTransactionUpdate();
+    showToast('削除しました。');
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    elements.saveTransactionButton.disabled = false;
+    elements.deleteTransactionButton.disabled = false;
   }
 }
 
@@ -1142,6 +1174,7 @@ function bindCommonEvents() {
     elements.transactionForm.addEventListener('submit', submitTransactionEdit);
     elements.cancelTransactionButton.addEventListener('click', closeTransactionDialog);
     elements.closeTransactionDialogButton.addEventListener('click', closeTransactionDialog);
+    elements.deleteTransactionButton.addEventListener('click', deleteCurrentTransaction);
     elements.transactionDialog.addEventListener('close', () => {
       state.editingTransaction = null;
       clearTransactionErrors();
