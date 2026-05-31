@@ -351,8 +351,10 @@ td.wrap-cell {
 
 .imports-table th:nth-child(4),
 .imports-table td:nth-child(4) {
-  width: 96px;
-  padding-right: 24px;
+  width: 88px;
+  padding-left: 14px;
+  padding-right: 20px;
+  text-align: left;
 }
 
 .imports-table th:nth-child(5),
