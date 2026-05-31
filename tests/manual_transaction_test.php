@@ -63,7 +63,7 @@ $bank = budget_normalize_manual_transaction([
     'used_on' => '2026-03-03',
     'merchant' => 'DUMMY_BANK_EXPENSE_MERCHANT',
     'payment_method' => '銀行口座',
-    'amount' => '111111',
+    'amount' => '22222',
 ]);
 
 test_assert($bank['statement_payment_on'] === '2026-03-03', 'bank payment date is forced to used date');

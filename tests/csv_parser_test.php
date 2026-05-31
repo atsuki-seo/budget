@@ -41,6 +41,21 @@ function test_parse_cp932(string $csv): array
     return test_parse($encoded);
 }
 
+function test_payment_exclusions_path(array $merchants): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'budget_exclusions_');
+    if ($path === false) {
+        fwrite(STDERR, "FAIL: tempnam failed\n");
+        exit(1);
+    }
+
+    $contents = "<?php\n\ndeclare(strict_types=1);\n\nreturn "
+        . var_export(['bank_merchant_exact' => $merchants], true)
+        . ";\n";
+    file_put_contents($path, $contents);
+    return $path;
+}
+
 function test_expect_invalid(string $csv, string $message): void
 {
     try {
@@ -57,7 +72,7 @@ $header = '"利用日/キャンセル日","利用店名・商品名","利用者"
 
 $parsed = test_parse("\xEF\xBB\xBF" . $header
     . '"2026/3/1","DUMMY_CARD_MERCHANT_A","本人","PayPayカード ゴールド","1回","111111","0","111111","111111","0","0","2026/4/27"' . "\n"
-    . '"2026/3/2","DUMMY_CARD_MERCHANT_B","本人","PayPayカード ゴールド","均等 2／6","222222","0","222222","22222","33333","0","2026/4/27"' . "\n");
+    . '"2026/3/2","DUMMY_CARD_MERCHANT_B","本人","PayPayカード ゴールド","均等 2／6","222222","0","222222","22222","200000","0","2026/4/27"' . "\n");
 
 test_assert($parsed['statement_payment_on'] === '2026-04-27', 'statement payment date is normalized');
 test_assert(count($parsed['rows']) === 2, 'BOM UTF-8 CSV rows are parsed');
@@ -93,13 +108,25 @@ test_assert(count($duplicates['rows']) === 2, 'duplicate CSV rows are preserved'
 test_assert(!array_key_exists('identity_hash', $duplicates['rows'][0]), 'identity hash is not returned');
 test_assert(!array_key_exists('occurrence_no', $duplicates['rows'][0]), 'occurrence number is not returned');
 
+$bankExclusionsPath = test_payment_exclusions_path([
+    'DUMMY_EXCLUDED_INVESTMENT',
+    'DUMMY_EXCLUDED_CARD_PAYMENT',
+    'DUMMY_EXCLUDED_TRANSFER',
+]);
+
 $bankHeader = '"操作日(年)","操作日(月)","操作日(日)","操作時刻(時)","操作時刻(分)","操作時刻(秒)","取引順番号","摘要","お支払金額","お預り金額","残高","メモ"' . "\r\n";
-$bank = test_parse_cp932($bankHeader
-    . '"2026","5","20","1","13","58","0000101","DUMMY_BANK_INCOME_SOURCE","","111111","900001",""' . "\r\n"
-    . '"2026","5","27","1","36","23","0000101","DUMMY_BANK_EXPENSE_MERCHANT　　　　　　　","22222","","877779",""' . "\r\n"
-    . '"2026","5","27","1","40","0","0000201","DUMMY_EXCLUDED_INVESTMENT","33333","","844446",""' . "\r\n"
-    . '"2026","5","27","1","46","6","0000301","DUMMY_EXCLUDED_CARD_PAYMENT","44444","","800002",""' . "\r\n"
-    . '"2026","5","31","12","17","4","0000101","DUMMY_EXCLUDED_TRANSFER","","333333","700003",""' . "\r\n");
+putenv('BUDGET_PAYMENT_IMPORT_EXCLUSIONS_PATH=' . $bankExclusionsPath);
+try {
+    $bank = test_parse_cp932($bankHeader
+        . '"2026","5","20","1","13","58","0000101","DUMMY_BANK_INCOME_SOURCE","","111111","900001",""' . "\r\n"
+        . '"2026","5","27","1","36","23","0000101","DUMMY_BANK_EXPENSE_MERCHANT    ","22222","","877779",""' . "\r\n"
+        . '"2026","5","27","1","40","0","0000201","DUMMY_EXCLUDED_INVESTMENT","33333","","844446",""' . "\r\n"
+        . '"2026","5","27","1","46","6","0000301","DUMMY_EXCLUDED_CARD_PAYMENT","44444","","800002",""' . "\r\n"
+        . '"2026","5","31","12","17","4","0000101","DUMMY_EXCLUDED_TRANSFER","","333333","700003",""' . "\r\n");
+} finally {
+    putenv('BUDGET_PAYMENT_IMPORT_EXCLUSIONS_PATH');
+    unlink($bankExclusionsPath);
+}
 
 test_assert($bank['source_type'] === 'bank_csv', 'CP932 bank CSV source type is detected');
 test_assert($bank['date_from'] === '2026-05-20', 'bank CSV date range starts from the first operation date');

@@ -338,13 +338,17 @@ function budget_trim_import_text(string $text): string
 
 function budget_payment_import_exclusion_merchants(): array
 {
-    static $exclusions = null;
+    static $exclusionsByPath = [];
 
-    if ($exclusions !== null) {
-        return $exclusions;
+    $envPath = getenv('BUDGET_PAYMENT_IMPORT_EXCLUSIONS_PATH');
+    $path = is_string($envPath) && trim($envPath) !== ''
+        ? $envPath
+        : __DIR__ . '/payment_import_exclusions.php';
+
+    if (array_key_exists($path, $exclusionsByPath)) {
+        return $exclusionsByPath[$path];
     }
 
-    $path = __DIR__ . '/payment_import_exclusions.php';
     $loaded = is_file($path) ? require $path : [];
     if (!is_array($loaded)) {
         throw new RuntimeException('payment_import_exclusions.php must return an array.');
@@ -367,7 +371,8 @@ function budget_payment_import_exclusion_merchants(): array
         }
     }
 
-    return $exclusions;
+    $exclusionsByPath[$path] = $exclusions;
+    return $exclusionsByPath[$path];
 }
 
 function budget_is_payment_import_merchant_excluded(string $merchant): bool
