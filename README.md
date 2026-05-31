@@ -36,7 +36,7 @@ Public read API:
 - `GET /api/summary.php`
 
 `GET /api/transactions.php` supports `date_from`, `date_to`, `limit`, and `offset`.
-Dates filter `statement_payment_on`, `limit` defaults to `100`, and rows are ordered by `statement_payment_on DESC`, with `銀行口座` first within the same payment date, `1回` before other payment categories within the same payment method, and `id DESC` as the final tie-breaker.
+Dates filter `statement_payment_on`, `limit` defaults to `100`, and rows are ordered by `statement_payment_on DESC`, with `1回` before other payment categories within the same payment date, then by `payment_method` with `銀行口座` first, and `id DESC` as the final tie-breaker.
 
 `GET /api/summary.php` supports `date_from` and `date_to`, groups by payment month from `statement_payment_on`, and sums `billing_amount`.
 The public `/budget/` UI exposes only start/end payment-month selectors for months with data.

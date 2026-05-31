@@ -47,9 +47,9 @@ try {
             $whereSql
             ORDER BY
                 t.statement_payment_on DESC,
+                CASE WHEN t.payment_category = '1回' THEN 0 ELSE 1 END ASC,
                 CASE WHEN t.payment_method = '銀行口座' THEN 0 ELSE 1 END ASC,
                 t.payment_method ASC,
-                CASE WHEN t.payment_category = '1回' THEN 0 ELSE 1 END ASC,
                 t.id DESC
             LIMIT $limit OFFSET $offset";
     $stmt = $pdo->prepare($sql);
