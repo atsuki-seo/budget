@@ -187,6 +187,8 @@ function bindAdminElements() {
     paymentCategory: $('#manualPaymentCategoryError'),
   };
   elements.importForm = $('#importForm');
+  elements.csvFile = $('#csvFile');
+  elements.importSubmitButton = $('#importSubmitButton');
   elements.importsBody = $('#importsBody');
   elements.importsResultCount = $('#importsResultCount');
   elements.prevImportsPageButton = $('#prevImportsPageButton');
@@ -549,6 +551,10 @@ async function submitManualEntry(event) {
   }
 }
 
+function updateImportSubmitState() {
+  elements.importSubmitButton.disabled = elements.csvFile.files.length === 0;
+}
+
 function bindCommonEvents() {
   if (elements.loginButton) {
     elements.loginButton.addEventListener('click', showLoginDialog);
@@ -671,6 +677,7 @@ function bindTransactionsEvents() {
 
 function bindAdminEvents() {
   initializeManualEntryControls();
+  updateImportSubmitState();
 
   elements.openManualDialogButton.addEventListener('click', showManualEntryDialog);
 
@@ -692,24 +699,30 @@ function bindAdminEvents() {
 
   elements.manualInstallmentCount.addEventListener('change', updateManualInstallmentNumbers);
 
+  elements.csvFile.addEventListener('change', updateImportSubmitState);
+
   elements.importForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(elements.importForm);
     const file = formData.get('csv');
     if (!(file instanceof File) || file.name === '') {
+      updateImportSubmitState();
       showToast('CSVファイルを選択してください。');
       return;
     }
 
+    elements.importSubmitButton.disabled = true;
     try {
       await api('api/imports.php', {
         method: 'POST',
         body: formData,
       });
       elements.importForm.reset();
+      updateImportSubmitState();
       state.importsOffset = 0;
       await loadImports();
     } catch (error) {
+      updateImportSubmitState();
       showToast(error.message);
     }
   });
