@@ -61,6 +61,11 @@ const BUDGET_RECEIVING_METHODS = [
     '銀行口座',
 ];
 
+const BUDGET_CARD_USERS = [
+    '本人',
+    '家族',
+];
+
 const BUDGET_INSTALLMENT_COUNTS = [
     2,
     3,
@@ -421,9 +426,56 @@ function budget_parse_manual_amount($value, string $field): int
     return (int)$amount;
 }
 
+function budget_parse_transaction_int($value, string $field): int
+{
+    if (!is_scalar($value)) {
+        throw new InvalidArgumentException("$field must be an integer amount.");
+    }
+
+    $amount = str_replace([',', ' ', '　', "\t", "\r", "\n"], '', trim((string)$value));
+    if ($amount === '' || !preg_match('/^-?\d+$/', $amount)) {
+        throw new InvalidArgumentException("$field must be an integer amount.");
+    }
+
+    $isNegative = $amount[0] === '-';
+    $digits = $isNegative ? substr($amount, 1) : $amount;
+    $digits = ltrim($digits, '0');
+    if ($digits === '') {
+        return 0;
+    }
+
+    $limit = $isNegative ? '2147483648' : '2147483647';
+    if (strlen($digits) > 10 || (strlen($digits) === 10 && strcmp($digits, $limit) > 0)) {
+        throw new InvalidArgumentException("$field is outside the supported integer range.");
+    }
+
+    $integer = (int)$digits;
+    return $isNegative ? -$integer : $integer;
+}
+
 function budget_is_card_payment_method(string $paymentMethod): bool
 {
     return in_array($paymentMethod, BUDGET_CARD_PAYMENT_METHODS, true);
+}
+
+function budget_normalize_card_user($value): string
+{
+    $cardUser = budget_clean_text($value ?? '本人', 100, '利用者');
+    if ($cardUser === '') {
+        $cardUser = '本人';
+    }
+
+    $cardUser = preg_replace('/[\s\x{3000}]*\*+$/u', '', $cardUser);
+    if (!is_string($cardUser)) {
+        throw new InvalidArgumentException('利用者 is invalid.');
+    }
+
+    $cardUser = trim($cardUser);
+    if (!in_array($cardUser, BUDGET_CARD_USERS, true)) {
+        throw new InvalidArgumentException('利用者 is invalid.');
+    }
+
+    return $cardUser;
 }
 
 function budget_normalize_manual_payment_category($value): string
@@ -473,6 +525,7 @@ function budget_normalize_manual_expense_transaction(array $data): array
         throw new InvalidArgumentException('店名・商品名 is required.');
     }
 
+    $cardUser = budget_normalize_card_user($data['card_user'] ?? '本人');
     $paymentMethod = budget_clean_text($data['payment_method'] ?? '', 100, '決済方法');
     if (!in_array($paymentMethod, BUDGET_PAYMENT_METHODS, true)) {
         throw new InvalidArgumentException('決済方法 is invalid.');
@@ -492,7 +545,7 @@ function budget_normalize_manual_expense_transaction(array $data): array
         'statement_payment_on' => $statementPaymentOn,
         'used_on' => $usedOn,
         'merchant' => $merchant,
-        'card_user' => '本人',
+        'card_user' => $cardUser,
         'payment_method' => $paymentMethod,
         'payment_category' => $paymentCategory,
         'usage_amount' => $amount,
@@ -510,6 +563,7 @@ function budget_normalize_manual_income_transaction(array $data): array
         throw new InvalidArgumentException('摘要 is required.');
     }
 
+    $cardUser = budget_normalize_card_user($data['card_user'] ?? '本人');
     $receivingMethod = budget_clean_text($data['receiving_method'] ?? ($data['payment_method'] ?? ''), 100, '受取方法');
     if (!in_array($receivingMethod, BUDGET_RECEIVING_METHODS, true)) {
         throw new InvalidArgumentException('受取方法 is invalid.');
@@ -522,7 +576,7 @@ function budget_normalize_manual_income_transaction(array $data): array
         'statement_payment_on' => $receivedOn,
         'used_on' => $receivedOn,
         'merchant' => $description,
-        'card_user' => '本人',
+        'card_user' => $cardUser,
         'payment_method' => $receivingMethod,
         'payment_category' => '入金',
         'usage_amount' => $amount,
@@ -539,6 +593,89 @@ function budget_normalize_manual_transaction(array $data): array
     }
 
     return budget_normalize_manual_expense_transaction($data);
+}
+
+function budget_normalize_update_payment_text($value, string $field): string
+{
+    $text = budget_clean_text($value, 100, $field);
+    if ($text === '') {
+        throw new InvalidArgumentException("$field is required.");
+    }
+
+    return $text;
+}
+
+function budget_normalize_expense_transaction_update(array $data): array
+{
+    $statementPaymentOn = budget_parse_manual_date($data['statement_payment_on'] ?? '', '支払日');
+    $usedOn = budget_parse_manual_date($data['used_on'] ?? '', '利用日');
+    $merchant = budget_clean_text($data['merchant'] ?? '', 255, '店名・商品名');
+    if ($merchant === '') {
+        throw new InvalidArgumentException('店名・商品名 is required.');
+    }
+
+    return [
+        'transaction_type' => 'expense',
+        'statement_payment_on' => $statementPaymentOn,
+        'used_on' => $usedOn,
+        'merchant' => $merchant,
+        'card_user' => budget_normalize_card_user($data['card_user'] ?? '本人'),
+        'payment_method' => budget_normalize_update_payment_text($data['payment_method'] ?? '', '決済方法'),
+        'payment_category' => budget_normalize_update_payment_text($data['payment_category'] ?? '', '支払区分'),
+        'usage_amount' => budget_parse_transaction_int($data['usage_amount'] ?? '', '利用金額'),
+        'billing_amount' => budget_parse_transaction_int($data['billing_amount'] ?? '', '当月支払'),
+        'carried_forward_amount' => budget_parse_transaction_int($data['carried_forward_amount'] ?? '', '繰越'),
+        'adjustment_amount' => budget_parse_transaction_int($data['adjustment_amount'] ?? '', '調整'),
+    ];
+}
+
+function budget_normalize_income_transaction_update(array $data): array
+{
+    $receivedOn = budget_parse_manual_date($data['received_on'] ?? ($data['statement_payment_on'] ?? ''), '受取日');
+    $description = budget_clean_text($data['description'] ?? ($data['merchant'] ?? ''), 255, '摘要');
+    if ($description === '') {
+        throw new InvalidArgumentException('摘要 is required.');
+    }
+
+    $amount = budget_parse_manual_amount($data['amount'] ?? ($data['billing_amount'] ?? ''), '金額');
+
+    return [
+        'transaction_type' => 'income',
+        'statement_payment_on' => $receivedOn,
+        'used_on' => $receivedOn,
+        'merchant' => $description,
+        'card_user' => budget_normalize_card_user($data['card_user'] ?? '本人'),
+        'payment_method' => budget_normalize_update_payment_text($data['receiving_method'] ?? ($data['payment_method'] ?? ''), '受取方法'),
+        'payment_category' => '入金',
+        'usage_amount' => $amount,
+        'billing_amount' => $amount,
+        'carried_forward_amount' => 0,
+        'adjustment_amount' => 0,
+    ];
+}
+
+function budget_transaction_row(array $row): array
+{
+    $transaction = [
+        'id' => (int)$row['id'],
+        'transaction_type' => $row['transaction_type'],
+        'statement_payment_on' => $row['statement_payment_on'],
+        'used_on' => $row['used_on'],
+        'merchant' => $row['merchant'],
+        'card_user' => $row['card_user'],
+        'payment_method' => $row['payment_method'],
+        'payment_category' => $row['payment_category'],
+        'usage_amount' => (int)$row['usage_amount'],
+        'billing_amount' => (int)$row['billing_amount'],
+        'carried_forward_amount' => (int)$row['carried_forward_amount'],
+        'adjustment_amount' => (int)$row['adjustment_amount'],
+    ];
+
+    if (array_key_exists('import_id', $row)) {
+        $transaction['import_id'] = $row['import_id'] === null ? null : (int)$row['import_id'];
+    }
+
+    return $transaction;
 }
 
 function budget_optional_date_param(string $name): ?string
@@ -1138,6 +1275,125 @@ function budget_create_manual_transaction(PDO $pdo, array $data): array
         $pdo->commit();
 
         return ['id' => $transactionId, 'import_id' => $importId] + $fields;
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $exception;
+    }
+}
+
+function budget_update_transaction(PDO $pdo, int $id, array $data): array
+{
+    $pdo->beginTransaction();
+
+    try {
+        $select = $pdo->prepare(
+            "SELECT
+                t.id,
+                t.import_id,
+                t.transaction_type,
+                i.source_type,
+                i.row_count,
+                (
+                    SELECT COUNT(*)
+                    FROM transactions related
+                    WHERE related.import_id = t.import_id
+                ) AS import_transaction_count
+             FROM transactions t
+             LEFT JOIN imports i ON i.id = t.import_id
+             WHERE t.id = ?
+             FOR UPDATE"
+        );
+        $select->execute([$id]);
+        $existing = $select->fetch();
+        if (!$existing) {
+            throw new InvalidArgumentException('Transaction was not found.');
+        }
+
+        if (array_key_exists('transaction_type', $data) && $data['transaction_type'] !== '') {
+            $requestedType = budget_normalize_manual_transaction_type($data);
+            if ($requestedType !== $existing['transaction_type']) {
+                throw new InvalidArgumentException('種別 cannot be changed.');
+            }
+        }
+
+        $fields = $existing['transaction_type'] === 'income'
+            ? budget_normalize_income_transaction_update($data)
+            : budget_normalize_expense_transaction_update($data);
+
+        $update = $pdo->prepare(
+            'UPDATE transactions
+             SET statement_payment_on = ?,
+                 used_on = ?,
+                 merchant = ?,
+                 card_user = ?,
+                 payment_method = ?,
+                 payment_category = ?,
+                 usage_amount = ?,
+                 billing_amount = ?,
+                 carried_forward_amount = ?,
+                 adjustment_amount = ?
+             WHERE id = ?'
+        );
+        $update->execute([
+            $fields['statement_payment_on'],
+            $fields['used_on'],
+            $fields['merchant'],
+            $fields['card_user'],
+            $fields['payment_method'],
+            $fields['payment_category'],
+            $fields['usage_amount'],
+            $fields['billing_amount'],
+            $fields['carried_forward_amount'],
+            $fields['adjustment_amount'],
+            $id,
+        ]);
+
+        if (
+            $existing['import_id'] !== null
+            && $existing['source_type'] === 'manual'
+            && (int)$existing['row_count'] === 1
+            && (int)$existing['import_transaction_count'] === 1
+        ) {
+            $updateImport = $pdo->prepare(
+                'UPDATE imports
+                 SET statement_payment_on = ?
+                 WHERE id = ?'
+            );
+            $updateImport->execute([
+                $fields['statement_payment_on'],
+                (int)$existing['import_id'],
+            ]);
+        }
+
+        $updated = $pdo->prepare(
+            'SELECT
+                id,
+                import_id,
+                transaction_type,
+                statement_payment_on,
+                used_on,
+                merchant,
+                card_user,
+                payment_method,
+                payment_category,
+                usage_amount,
+                billing_amount,
+                carried_forward_amount,
+                adjustment_amount
+             FROM transactions
+             WHERE id = ?'
+        );
+        $updated->execute([$id]);
+        $transaction = $updated->fetch();
+        if (!$transaction) {
+            throw new RuntimeException('Updated transaction could not be loaded.');
+        }
+
+        $pdo->commit();
+
+        return budget_transaction_row($transaction);
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();

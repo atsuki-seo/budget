@@ -39,7 +39,7 @@ Public read API:
 Dates filter the selected transaction month: expense rows use `statement_payment_on`, and income rows store the received date in `statement_payment_on`.
 Rows include `transaction_type`, which is either `expense` or `income`.
 When `limit` or `offset` is present, paging is applied with the previous `limit=100` default and `limit=200` maximum. When both are omitted, all rows in the selected period are returned.
-Rows are ordered with income before expense, then by `statement_payment_on DESC`, with `1回` before other payment categories within the same payment date, then by `payment_method` with `銀行口座` first, and `id DESC` as the final tie-breaker.
+Rows are ordered by `statement_payment_on DESC`, then `used_on DESC`, then payment category with `1回` before other categories, then `payment_category ASC`, and `id DESC` as the final tie-breaker.
 
 `GET /api/summary.php` supports `date_from` and `date_to`, groups by month from `statement_payment_on`, and returns `income_amount` and `expense_amount`.
 The public `/budget/` UI exposes only start/end month selectors for months with data.
@@ -50,6 +50,7 @@ Admin API:
 - `POST /api/session.php`
 - `DELETE /api/session.php`
 - `POST /api/transactions.php`
+- `PUT /api/transactions.php?id=...`
 - `GET /api/manual_transactions.php`
 - `POST /api/imports.php`
 - `GET /api/imports.php`
@@ -58,6 +59,8 @@ Admin API:
 All API responses are JSON with `Cache-Control: no-store`. Mutating admin requests require both an authenticated PHP session and the `X-CSRF-Token` header.
 
 `GET /api/manual_transactions.php` defaults to `transaction_type=expense`, `limit=5`, supports `transaction_type=expense|income` and `offset`, and returns hand-entered transactions in reverse creation order.
+
+`PUT /api/transactions.php?id=...` updates an existing transaction without changing its `transaction_type`. When the transaction belongs to a single-row manual import, the related `imports.statement_payment_on` is synchronized to the updated payment or received date. CSV and bank CSV import log dates are not changed.
 
 `GET /api/imports.php` defaults to `limit=5`, supports `offset` and optional comma-separated `source_types`, and returns import log rows in reverse import order.
 Each import row includes `source_type`, where `csv` is an uploaded PayPay card CSV, `bank_csv` is an uploaded bank-account CSV, and `manual` is a single hand-entered transaction.
@@ -140,11 +143,13 @@ Manual entry creates one `imports` row with `source_type='manual'`, `source_file
 The admin screen lists hand-entered expense and income rows separately under `決済情報の追加`.
 
 Expense entry stores `transaction_type='expense'`. If `transaction_type` is omitted in the API request, the request is treated as an expense for backward compatibility.
+Manual entry accepts `card_user='本人'|'家族'`; when omitted, it defaults to `本人`.
 Supported expense payment methods are fixed to the known PayPay card values plus `銀行口座` and `現金`.
+The admin form defaults new expense rows to `PayPayカード ゴールド`.
 For `銀行口座` and `現金`, `statement_payment_on` is forced to `used_on` and `payment_category` is forced to `1回`.
 For card payment methods, the form accepts `1回` or `均等 N／M`; `M` must be one of `2,3,5,6,10,12,15,18,20,24,30,36,48` and `N` must be within `1..M`.
 
-Income entry stores `transaction_type='income'`. The API accepts `received_on`, `description`, `receiving_method`, and `amount`.
+Income entry stores `transaction_type='income'`. The API accepts `received_on`, `description`, `card_user`, `receiving_method`, and `amount`.
 Supported receiving methods are `現金` and `銀行口座`.
 Income stores `received_on` in both `statement_payment_on` and `used_on`, stores `description` in `merchant`, stores `receiving_method` in `payment_method`, and uses `payment_category='入金'`.
 

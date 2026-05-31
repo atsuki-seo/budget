@@ -5,7 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/app.php';
 
 try {
-    $method = budget_require_method(['GET', 'POST']);
+    $method = budget_require_method(['GET', 'POST', 'PUT']);
 
     if ($method === 'POST') {
         budget_require_admin();
@@ -15,6 +15,17 @@ try {
         $transaction = budget_create_manual_transaction($pdo, budget_request_data());
 
         budget_json_response(['transaction' => $transaction], 201);
+    }
+
+    if ($method === 'PUT') {
+        budget_require_admin();
+        budget_require_csrf();
+
+        $id = budget_required_id(isset($_GET['id']) ? (string)$_GET['id'] : null);
+        $pdo = budget_pdo();
+        $transaction = budget_update_transaction($pdo, $id, budget_request_data());
+
+        budget_json_response(['transaction' => $transaction]);
     }
 
     $pdo = budget_pdo();
@@ -48,11 +59,10 @@ try {
             FROM transactions t
             $whereSql
             ORDER BY
-                CASE WHEN t.transaction_type = 'income' THEN 0 ELSE 1 END ASC,
                 t.statement_payment_on DESC,
+                t.used_on DESC,
                 CASE WHEN t.payment_category = '1回' THEN 0 ELSE 1 END ASC,
-                CASE WHEN t.payment_method = '銀行口座' THEN 0 ELSE 1 END ASC,
-                t.payment_method ASC,
+                t.payment_category ASC,
                 t.id DESC
             " . ($usesPaging ? "LIMIT $limit OFFSET $offset" : '');
     $stmt = $pdo->prepare($sql);

@@ -35,8 +35,10 @@ const state = {
     },
   },
   openTableFilter: null,
+  editingTransaction: null,
 };
 
+const defaultManualPaymentMethod = 'PayPayカード ゴールド';
 const manualPaymentMethods = [
   'Apple Pay',
   'Apple Pay QUICPay',
@@ -50,6 +52,10 @@ const manualPaymentMethods = [
 const manualReceivingMethods = [
   '現金',
   '銀行口座',
+];
+const manualCardUsers = [
+  '本人',
+  '家族',
 ];
 const nonCardPaymentMethods = new Set(['銀行口座', '現金']);
 const manualInstallmentCounts = [2, 3, 5, 6, 10, 12, 15, 18, 20, 24, 30, 36, 48];
@@ -190,6 +196,45 @@ function bindCommonElements() {
   elements.loginForm = $('#loginForm');
   elements.loginPassword = $('#loginForm input[name="password"]');
   elements.cancelLoginButton = $('#cancelLoginButton');
+  elements.closeLoginDialogButton = $('#closeLoginDialogButton');
+  elements.transactionDialog = $('#transactionDialog');
+  elements.transactionForm = $('#transactionForm');
+  elements.closeTransactionDialogButton = $('#closeTransactionDialogButton');
+  elements.cancelTransactionButton = $('#cancelTransactionButton');
+  elements.saveTransactionButton = $('#saveTransactionButton');
+  elements.transactionDialogTitle = $('#transactionDialogTitle');
+  elements.transactionReadonlyNotice = $('#transactionReadonlyNotice');
+  elements.transactionStatementPaymentOnLabel = $('#transactionStatementPaymentOnLabel');
+  elements.transactionStatementPaymentOn = $('#transactionStatementPaymentOn');
+  elements.transactionUsedOnGroup = $('#transactionUsedOnGroup');
+  elements.transactionUsedOn = $('#transactionUsedOn');
+  elements.transactionMerchantLabel = $('#transactionMerchantLabel');
+  elements.transactionMerchant = $('#transactionMerchant');
+  elements.transactionCardUser = $('#transactionCardUser');
+  elements.transactionPaymentMethodLabel = $('#transactionPaymentMethodLabel');
+  elements.transactionPaymentMethod = $('#transactionPaymentMethod');
+  elements.transactionPaymentCategoryGroup = $('#transactionPaymentCategoryGroup');
+  elements.transactionPaymentCategory = $('#transactionPaymentCategory');
+  elements.transactionBillingAmountLabel = $('#transactionBillingAmountLabel');
+  elements.transactionBillingAmount = $('#transactionBillingAmount');
+  elements.transactionUsageAmountGroup = $('#transactionUsageAmountGroup');
+  elements.transactionUsageAmount = $('#transactionUsageAmount');
+  elements.transactionCarriedForwardAmountGroup = $('#transactionCarriedForwardAmountGroup');
+  elements.transactionCarriedForwardAmount = $('#transactionCarriedForwardAmount');
+  elements.transactionAdjustmentAmountGroup = $('#transactionAdjustmentAmountGroup');
+  elements.transactionAdjustmentAmount = $('#transactionAdjustmentAmount');
+  elements.transactionErrors = {
+    statementPaymentOn: $('#transactionStatementPaymentOnError'),
+    usedOn: $('#transactionUsedOnError'),
+    merchant: $('#transactionMerchantError'),
+    cardUser: $('#transactionCardUserError'),
+    paymentMethod: $('#transactionPaymentMethodError'),
+    paymentCategory: $('#transactionPaymentCategoryError'),
+    billingAmount: $('#transactionBillingAmountError'),
+    usageAmount: $('#transactionUsageAmountError'),
+    carriedForwardAmount: $('#transactionCarriedForwardAmountError'),
+    adjustmentAmount: $('#transactionAdjustmentAmountError'),
+  };
   elements.toast = $('#toast');
 }
 
@@ -214,6 +259,7 @@ function bindAdminElements() {
   elements.manualEntryDialog = $('#manualEntryDialog');
   elements.manualEntryForm = $('#manualEntryForm');
   elements.cancelManualEntryButton = $('#cancelManualEntryButton');
+  elements.closeManualEntryDialogButton = $('#closeManualEntryDialogButton');
   elements.manualTransactionType = [...document.querySelectorAll('input[name="transaction_type"]')];
   elements.manualUsedOnLabel = $('#manualUsedOnLabel');
   elements.manualUsedOn = $('#manualUsedOn');
@@ -221,6 +267,7 @@ function bindAdminElements() {
   elements.manualMerchant = $('#manualMerchant');
   elements.manualPaymentMethodLabel = $('#manualPaymentMethodLabel');
   elements.manualPaymentMethod = $('#manualPaymentMethod');
+  elements.manualCardUser = $('#manualCardUser');
   elements.manualAmount = $('#manualAmount');
   elements.manualCardDetails = $('#manualCardDetails');
   elements.manualStatementPaymentOn = $('#manualStatementPaymentOn');
@@ -239,6 +286,7 @@ function bindAdminElements() {
     transactionType: $('#manualTransactionTypeError'),
     usedOn: $('#manualUsedOnError'),
     merchant: $('#manualMerchantError'),
+    cardUser: $('#manualCardUserError'),
     paymentMethod: $('#manualPaymentMethodError'),
     amount: $('#manualAmountError'),
     statementPaymentOn: $('#manualStatementPaymentOnError'),
@@ -324,8 +372,40 @@ function normalizeManualAmount(value) {
   return Number(withoutLeadingZeroes);
 }
 
+function normalizeSignedIntegerAmount(value) {
+  const amount = String(value ?? '').trim().replace(/[,\s\u3000]/g, '');
+  if (!/^-?\d+$/.test(amount)) {
+    return null;
+  }
+
+  const number = Number(amount);
+  if (
+    !Number.isInteger(number)
+    || number < -2147483648
+    || number > maxIntegerAmount
+  ) {
+    return null;
+  }
+
+  return Object.is(number, -0) ? 0 : number;
+}
+
 function isManualCardPaymentMethod(paymentMethod) {
   return manualPaymentMethods.includes(paymentMethod) && !nonCardPaymentMethods.has(paymentMethod);
+}
+
+function normalizeCardUserInputValue(value) {
+  const text = String(value ?? '').trim().replace(/\s*\*+$/u, '').trim();
+  return manualCardUsers.includes(text) ? text : manualCardUsers[0];
+}
+
+function optionsWithCurrent(values, currentValue) {
+  const current = String(currentValue ?? '').trim();
+  if (current === '' || values.includes(current)) {
+    return values;
+  }
+
+  return [current, ...values];
 }
 
 function replaceSelectOptions(select, values, selectedValue = '') {
@@ -431,16 +511,18 @@ function updateManualTransactionTypeControls() {
   const isIncome = selectedManualTransactionType() === 'income';
   const options = isIncome ? manualReceivingMethods : manualPaymentMethods;
   const currentPaymentMethod = elements.manualPaymentMethod.value;
+  const fallbackPaymentMethod = isIncome ? options[0] : defaultManualPaymentMethod;
   replaceSelectOptions(
     elements.manualPaymentMethod,
     options,
-    options.includes(currentPaymentMethod) ? currentPaymentMethod : options[0]
+    options.includes(currentPaymentMethod) ? currentPaymentMethod : fallbackPaymentMethod
   );
   updateManualPaymentMethodControls();
 }
 
 function initializeManualEntryControls() {
-  replaceSelectOptions(elements.manualPaymentMethod, manualPaymentMethods, manualPaymentMethods[0]);
+  replaceSelectOptions(elements.manualPaymentMethod, manualPaymentMethods, defaultManualPaymentMethod);
+  replaceSelectOptions(elements.manualCardUser, manualCardUsers, manualCardUsers[0]);
   replaceSelectOptions(
     elements.manualInstallmentCount,
     manualInstallmentCounts.map((value) => String(value)),
@@ -459,6 +541,7 @@ function clearManualErrors() {
     elements.manualUsedOn,
     elements.manualMerchant,
     elements.manualPaymentMethod,
+    elements.manualCardUser,
     elements.manualAmount,
     elements.manualStatementPaymentOn,
     elements.manualInstallmentCount,
@@ -479,6 +562,7 @@ function renderManualErrors(errors) {
     transactionType: elements.manualTransactionType[0],
     usedOn: elements.manualUsedOn,
     merchant: elements.manualMerchant,
+    cardUser: elements.manualCardUser,
     paymentMethod: elements.manualPaymentMethod,
     amount: elements.manualAmount,
     statementPaymentOn: elements.manualStatementPaymentOn,
@@ -494,11 +578,21 @@ function renderManualErrors(errors) {
 }
 
 function focusFirstManualError(errors) {
-  const fields = ['transactionType', 'paymentMethod', 'usedOn', 'merchant', 'amount', 'statementPaymentOn', 'paymentCategory'];
+  const fields = [
+    'transactionType',
+    'paymentMethod',
+    'cardUser',
+    'usedOn',
+    'merchant',
+    'amount',
+    'statementPaymentOn',
+    'paymentCategory',
+  ];
   const fieldInputs = {
     transactionType: elements.manualTransactionType[0],
     usedOn: elements.manualUsedOn,
     merchant: elements.manualMerchant,
+    cardUser: elements.manualCardUser,
     paymentMethod: elements.manualPaymentMethod,
     amount: elements.manualAmount,
     statementPaymentOn: elements.manualStatementPaymentOn,
@@ -525,6 +619,7 @@ function validateManualEntryForm() {
   const usedOn = elements.manualUsedOn.value;
   const merchant = elements.manualMerchant.value.trim();
   const paymentMethod = elements.manualPaymentMethod.value;
+  const cardUser = elements.manualCardUser.value;
   const amount = normalizeManualAmount(elements.manualAmount.value);
   const isIncome = transactionType === 'income';
   const isCard = isManualCardPaymentMethod(paymentMethod);
@@ -551,6 +646,10 @@ function validateManualEntryForm() {
     }
   } else if (!manualPaymentMethods.includes(paymentMethod)) {
     errors.paymentMethod = '決済方法を選択してください。';
+  }
+
+  if (!manualCardUsers.includes(cardUser)) {
+    errors.cardUser = '利用者を選択してください。';
   }
 
   if (amount === null) {
@@ -589,6 +688,7 @@ function validateManualEntryForm() {
       transaction_type: 'income',
       received_on: usedOn,
       description: merchant,
+      card_user: cardUser,
       receiving_method: paymentMethod,
       amount,
     };
@@ -598,6 +698,7 @@ function validateManualEntryForm() {
     transaction_type: 'expense',
     used_on: usedOn,
     merchant,
+    card_user: cardUser,
     payment_method: paymentMethod,
     amount,
     statement_payment_on: statementPaymentOn,
@@ -613,7 +714,8 @@ function resetManualEntryForm() {
   elements.manualUsedOn.value = today;
   elements.manualStatementPaymentOn.value = today;
   setManualTransactionType('expense');
-  elements.manualPaymentMethod.value = manualPaymentMethods[0];
+  elements.manualPaymentMethod.value = defaultManualPaymentMethod;
+  elements.manualCardUser.value = manualCardUsers[0];
   elements.manualInstallmentCount.value = String(manualInstallmentCounts[0]);
   updateManualInstallmentNumbers();
   setPaymentCategoryMode('one_time');
@@ -691,6 +793,322 @@ async function submitManualEntry(event) {
   }
 }
 
+function transactionFormInputs() {
+  return [
+    elements.transactionStatementPaymentOn,
+    elements.transactionUsedOn,
+    elements.transactionMerchant,
+    elements.transactionCardUser,
+    elements.transactionPaymentMethod,
+    elements.transactionPaymentCategory,
+    elements.transactionBillingAmount,
+    elements.transactionUsageAmount,
+    elements.transactionCarriedForwardAmount,
+    elements.transactionAdjustmentAmount,
+  ].filter(Boolean);
+}
+
+function clearTransactionErrors() {
+  for (const error of Object.values(elements.transactionErrors || {})) {
+    if (error) {
+      error.textContent = '';
+    }
+  }
+
+  for (const input of transactionFormInputs()) {
+    input.removeAttribute('aria-invalid');
+  }
+}
+
+function renderTransactionErrors(errors) {
+  clearTransactionErrors();
+
+  const fieldInputs = {
+    statementPaymentOn: elements.transactionStatementPaymentOn,
+    usedOn: elements.transactionUsedOn,
+    merchant: elements.transactionMerchant,
+    cardUser: elements.transactionCardUser,
+    paymentMethod: elements.transactionPaymentMethod,
+    paymentCategory: elements.transactionPaymentCategory,
+    billingAmount: elements.transactionBillingAmount,
+    usageAmount: elements.transactionUsageAmount,
+    carriedForwardAmount: elements.transactionCarriedForwardAmount,
+    adjustmentAmount: elements.transactionAdjustmentAmount,
+  };
+
+  for (const [field, message] of Object.entries(errors)) {
+    if (elements.transactionErrors[field]) {
+      elements.transactionErrors[field].textContent = message;
+    }
+    if (fieldInputs[field]) {
+      fieldInputs[field].setAttribute('aria-invalid', 'true');
+    }
+  }
+}
+
+function focusFirstTransactionError(errors) {
+  const fields = [
+    'statementPaymentOn',
+    'usedOn',
+    'merchant',
+    'cardUser',
+    'paymentMethod',
+    'paymentCategory',
+    'billingAmount',
+    'usageAmount',
+    'carriedForwardAmount',
+    'adjustmentAmount',
+  ];
+  const fieldInputs = {
+    statementPaymentOn: elements.transactionStatementPaymentOn,
+    usedOn: elements.transactionUsedOn,
+    merchant: elements.transactionMerchant,
+    cardUser: elements.transactionCardUser,
+    paymentMethod: elements.transactionPaymentMethod,
+    paymentCategory: elements.transactionPaymentCategory,
+    billingAmount: elements.transactionBillingAmount,
+    usageAmount: elements.transactionUsageAmount,
+    carriedForwardAmount: elements.transactionCarriedForwardAmount,
+    adjustmentAmount: elements.transactionAdjustmentAmount,
+  };
+  const firstField = fields.find((field) => errors[field]);
+  if (firstField && fieldInputs[firstField]) {
+    fieldInputs[firstField].focus();
+  }
+}
+
+function setTransactionFormDisabled(disabled) {
+  for (const input of transactionFormInputs()) {
+    input.disabled = disabled;
+  }
+}
+
+function populateTransactionDialog(transaction) {
+  const isIncome = transaction.transaction_type === 'income';
+  const canSave = state.loggedIn;
+  const paymentMethod = String(transaction.payment_method ?? '').trim();
+  const cardUser = normalizeCardUserInputValue(transaction.card_user);
+  const paymentOptions = isIncome ? manualReceivingMethods : manualPaymentMethods;
+
+  clearTransactionErrors();
+  elements.transactionDialogTitle.textContent = isIncome ? '収入明細' : '支出明細';
+  elements.transactionReadonlyNotice.hidden = canSave;
+  elements.saveTransactionButton.hidden = !canSave;
+  elements.cancelTransactionButton.textContent = canSave ? 'キャンセル' : '閉じる';
+
+  elements.transactionStatementPaymentOnLabel.textContent = isIncome ? '受取日' : '支払日';
+  elements.transactionMerchantLabel.textContent = isIncome ? '摘要' : '店名・商品名';
+  elements.transactionPaymentMethodLabel.textContent = isIncome ? '受取方法' : '決済方法';
+  elements.transactionBillingAmountLabel.textContent = isIncome ? '金額' : '当月支払';
+
+  elements.transactionUsedOnGroup.hidden = isIncome;
+  elements.transactionPaymentCategoryGroup.hidden = isIncome;
+  elements.transactionUsageAmountGroup.hidden = isIncome;
+  elements.transactionCarriedForwardAmountGroup.hidden = isIncome;
+  elements.transactionAdjustmentAmountGroup.hidden = isIncome;
+
+  replaceSelectOptions(elements.transactionCardUser, manualCardUsers, cardUser);
+  replaceSelectOptions(
+    elements.transactionPaymentMethod,
+    optionsWithCurrent(paymentOptions, paymentMethod),
+    paymentMethod
+  );
+
+  elements.transactionStatementPaymentOn.value = transaction.statement_payment_on || '';
+  elements.transactionUsedOn.value = transaction.used_on || transaction.statement_payment_on || '';
+  elements.transactionMerchant.value = transaction.merchant || '';
+  elements.transactionPaymentCategory.value = transaction.payment_category || '';
+  elements.transactionBillingAmount.value = String(transaction.billing_amount ?? '');
+  elements.transactionUsageAmount.value = String(transaction.usage_amount ?? '');
+  elements.transactionCarriedForwardAmount.value = String(transaction.carried_forward_amount ?? '');
+  elements.transactionAdjustmentAmount.value = String(transaction.adjustment_amount ?? '');
+
+  setTransactionFormDisabled(!canSave);
+}
+
+function validateTransactionForm() {
+  const transaction = state.editingTransaction;
+  if (!transaction) {
+    return null;
+  }
+
+  const errors = {};
+  const isIncome = transaction.transaction_type === 'income';
+  const statementPaymentOn = elements.transactionStatementPaymentOn.value;
+  const usedOn = elements.transactionUsedOn.value;
+  const merchant = elements.transactionMerchant.value.trim();
+  const cardUser = elements.transactionCardUser.value;
+  const paymentMethod = elements.transactionPaymentMethod.value.trim();
+  const paymentCategory = elements.transactionPaymentCategory.value.trim();
+  const billingAmount = isIncome
+    ? normalizeManualAmount(elements.transactionBillingAmount.value)
+    : normalizeSignedIntegerAmount(elements.transactionBillingAmount.value);
+
+  if (!isValidDateValue(statementPaymentOn)) {
+    errors.statementPaymentOn = isIncome
+      ? '有効な受取日を入力してください。'
+      : '有効な支払日を入力してください。';
+  }
+
+  if (!isIncome && !isValidDateValue(usedOn)) {
+    errors.usedOn = '有効な利用日を入力してください。';
+  }
+
+  if (merchant === '') {
+    errors.merchant = isIncome ? '摘要を入力してください。' : '店名・商品名を入力してください。';
+  } else if (merchant.length > 255) {
+    errors.merchant = isIncome ? '摘要は255文字以内で入力してください。' : '店名・商品名は255文字以内で入力してください。';
+  }
+
+  if (!manualCardUsers.includes(cardUser)) {
+    errors.cardUser = '利用者を選択してください。';
+  }
+
+  if (paymentMethod === '') {
+    errors.paymentMethod = isIncome ? '受取方法を入力してください。' : '決済方法を入力してください。';
+  } else if (paymentMethod.length > 100) {
+    errors.paymentMethod = isIncome ? '受取方法は100文字以内で入力してください。' : '決済方法は100文字以内で入力してください。';
+  }
+
+  if (billingAmount === null) {
+    errors.billingAmount = isIncome ? '1円以上の整数を入力してください。' : '整数を入力してください。';
+  }
+
+  if (isIncome) {
+    if (Object.keys(errors).length > 0) {
+      renderTransactionErrors(errors);
+      focusFirstTransactionError(errors);
+      return null;
+    }
+
+    clearTransactionErrors();
+    return {
+      transaction_type: 'income',
+      received_on: statementPaymentOn,
+      description: merchant,
+      card_user: cardUser,
+      receiving_method: paymentMethod,
+      amount: billingAmount,
+    };
+  }
+
+  const usageAmount = normalizeSignedIntegerAmount(elements.transactionUsageAmount.value);
+  const carriedForwardAmount = normalizeSignedIntegerAmount(elements.transactionCarriedForwardAmount.value);
+  const adjustmentAmount = normalizeSignedIntegerAmount(elements.transactionAdjustmentAmount.value);
+
+  if (paymentCategory === '') {
+    errors.paymentCategory = '支払区分を入力してください。';
+  } else if (paymentCategory.length > 100) {
+    errors.paymentCategory = '支払区分は100文字以内で入力してください。';
+  }
+  if (usageAmount === null) {
+    errors.usageAmount = '整数を入力してください。';
+  }
+  if (carriedForwardAmount === null) {
+    errors.carriedForwardAmount = '整数を入力してください。';
+  }
+  if (adjustmentAmount === null) {
+    errors.adjustmentAmount = '整数を入力してください。';
+  }
+
+  if (Object.keys(errors).length > 0) {
+    renderTransactionErrors(errors);
+    focusFirstTransactionError(errors);
+    return null;
+  }
+
+  clearTransactionErrors();
+  return {
+    transaction_type: 'expense',
+    statement_payment_on: statementPaymentOn,
+    used_on: usedOn,
+    merchant,
+    card_user: cardUser,
+    payment_method: paymentMethod,
+    payment_category: paymentCategory,
+    billing_amount: billingAmount,
+    usage_amount: usageAmount,
+    carried_forward_amount: carriedForwardAmount,
+    adjustment_amount: adjustmentAmount,
+  };
+}
+
+function showTransactionDialog(transaction) {
+  if (!elements.transactionDialog) {
+    return;
+  }
+
+  state.editingTransaction = transaction;
+  populateTransactionDialog(transaction);
+
+  if (elements.transactionDialog.open) {
+    elements.transactionStatementPaymentOn.focus();
+    return;
+  }
+
+  if (typeof elements.transactionDialog.showModal === 'function') {
+    elements.transactionDialog.showModal();
+  } else {
+    elements.transactionDialog.setAttribute('open', '');
+  }
+
+  window.requestAnimationFrame(() => {
+    (state.loggedIn ? elements.transactionStatementPaymentOn : elements.cancelTransactionButton).focus();
+  });
+}
+
+function closeTransactionDialog() {
+  if (typeof elements.transactionDialog.close === 'function' && elements.transactionDialog.open) {
+    elements.transactionDialog.close();
+  } else {
+    elements.transactionDialog.removeAttribute('open');
+  }
+  state.editingTransaction = null;
+  clearTransactionErrors();
+}
+
+async function reloadAfterTransactionUpdate() {
+  if (state.page === 'transactions') {
+    await loadAvailableMonths();
+    await refreshData();
+    return;
+  }
+
+  await Promise.all([
+    loadManualTransactions(),
+    loadImports(),
+  ]);
+}
+
+async function submitTransactionEdit(event) {
+  event.preventDefault();
+  if (!state.loggedIn || !state.editingTransaction) {
+    closeTransactionDialog();
+    return;
+  }
+
+  const payload = validateTransactionForm();
+  if (payload === null) {
+    return;
+  }
+
+  const transactionId = state.editingTransaction.id;
+  elements.saveTransactionButton.disabled = true;
+  try {
+    await api(`api/transactions.php?id=${encodeURIComponent(transactionId)}`, {
+      method: 'PUT',
+      json: payload,
+    });
+    closeTransactionDialog();
+    await reloadAfterTransactionUpdate();
+    showToast('更新しました。');
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    elements.saveTransactionButton.disabled = false;
+  }
+}
+
 function updateImportSubmitState() {
   elements.importSubmitButton.disabled = elements.csvFile.files.length === 0;
 }
@@ -708,14 +1126,27 @@ function bindCommonEvents() {
     elements.transactionsButton.addEventListener('click', () => navigateTo(pageUrls.transactions));
   }
 
-  elements.cancelLoginButton.addEventListener('click', () => {
+  const cancelLogin = () => {
     if (state.page === 'admin') {
       navigateTo(pageUrls.transactions);
       return;
     }
 
     closeLoginDialog();
-  });
+  };
+
+  elements.cancelLoginButton.addEventListener('click', cancelLogin);
+  elements.closeLoginDialogButton.addEventListener('click', cancelLogin);
+
+  if (elements.transactionForm) {
+    elements.transactionForm.addEventListener('submit', submitTransactionEdit);
+    elements.cancelTransactionButton.addEventListener('click', closeTransactionDialog);
+    elements.closeTransactionDialogButton.addEventListener('click', closeTransactionDialog);
+    elements.transactionDialog.addEventListener('close', () => {
+      state.editingTransaction = null;
+      clearTransactionErrors();
+    });
+  }
 
   elements.loginDialog.addEventListener('cancel', (event) => {
     if (state.page !== 'admin') {
@@ -827,6 +1258,7 @@ function bindAdminEvents() {
   elements.openManualDialogButton.addEventListener('click', showManualEntryDialog);
 
   elements.cancelManualEntryButton.addEventListener('click', closeManualEntryDialog);
+  elements.closeManualEntryDialogButton.addEventListener('click', closeManualEntryDialog);
 
   elements.manualEntryForm.addEventListener('submit', submitManualEntry);
 
@@ -1435,6 +1867,22 @@ function appendCell(row, label, text, className) {
   return cell;
 }
 
+function makeTransactionRowInteractive(row, transaction) {
+  row.classList.add('clickable-row');
+  row.tabIndex = 0;
+  row.setAttribute('role', 'button');
+  row.setAttribute('aria-label', '明細を開く');
+  row.addEventListener('click', () => showTransactionDialog(transaction));
+  row.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    event.preventDefault();
+    showTransactionDialog(transaction);
+  });
+}
+
 function renderEmptyRow(body, message, colspan) {
   const row = createElement('tr');
   const cell = createElement('td', { className: 'empty', text: message, attrs: { colspan } });
@@ -1464,6 +1912,7 @@ function renderIncomeTransactions(transactions, totalCount, isFiltered) {
     appendCell(row, '摘要', transaction.merchant, 'merchant');
     appendCell(row, '受取方法', transaction.payment_method);
     appendCell(row, '金額', formatCurrency(transaction.billing_amount), 'number');
+    makeTransactionRowInteractive(row, transaction);
     return row;
   });
 
@@ -1493,6 +1942,7 @@ function renderExpenseTransactions(transactions, totalCount, isFiltered) {
     appendCell(row, '利用金額', formatCurrency(transaction.usage_amount), 'number');
     appendCell(row, '繰越', formatCurrency(transaction.carried_forward_amount), 'number');
     appendCell(row, '調整', formatCurrency(transaction.adjustment_amount), 'number');
+    makeTransactionRowInteractive(row, transaction);
     return row;
   });
 
@@ -1691,14 +2141,29 @@ function renderManualTransactions() {
     }
 
     const actionCell = createElement('td', { attrs: { 'data-label': '操作' } });
-    const button = createElement('button', {
+    const actionGroup = createElement('div', { className: 'row-actions' });
+    const editButton = createElement('button', {
+      className: 'secondary',
+      text: '変更',
+      attrs: { type: 'button' },
+    });
+    const deleteButton = createElement('button', {
       className: 'danger',
       text: '削除',
       attrs: { type: 'button' },
     });
-    button.addEventListener('click', () => deleteManualTransaction(item.import_id));
-    actionCell.append(button);
+    editButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      showTransactionDialog(item);
+    });
+    deleteButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      deleteManualTransaction(item.import_id);
+    });
+    actionGroup.append(editButton, deleteButton);
+    actionCell.append(actionGroup);
     row.append(actionCell);
+    makeTransactionRowInteractive(row, item);
     return row;
   });
 

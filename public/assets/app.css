@@ -515,6 +515,15 @@ tr:last-child td {
   border-bottom: 0;
 }
 
+tr.clickable-row {
+  cursor: pointer;
+}
+
+tr.clickable-row:hover td,
+tr.clickable-row:focus-visible td {
+  background: #f9fafb;
+}
+
 td.merchant {
   min-width: 220px;
   max-width: 360px;
@@ -567,6 +576,10 @@ td.wrap-cell {
 
 .manual-dialog-form {
   width: min(100vw - 48px, 640px);
+}
+
+.transaction-dialog-form {
+  width: min(100vw - 48px, 720px);
 }
 
 .manual-grid,
@@ -668,6 +681,7 @@ legend {
 }
 
 dialog {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 20px;
@@ -682,6 +696,41 @@ dialog::backdrop {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.dialog-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  min-height: 32px;
+  border-color: transparent;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.dialog-close:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.dialog-form > h2 {
+  padding-right: 34px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.row-actions button {
+  min-height: 32px;
+  padding: 0 10px;
 }
 
 .toast {

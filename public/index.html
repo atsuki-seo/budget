@@ -124,8 +124,104 @@
       </section>
     </main>
 
+    <dialog id="transactionDialog">
+      <form id="transactionForm" method="dialog" class="dialog-form transaction-dialog-form" novalidate>
+        <button id="closeTransactionDialogButton" class="dialog-close" type="button" aria-label="閉じる">☓</button>
+        <h2 id="transactionDialogTitle">明細詳細</h2>
+        <p id="transactionReadonlyNotice" class="muted" hidden>詳細表示のみです。ログイン中のみ保存できます。</p>
+
+        <div class="manual-grid">
+          <div class="field-group">
+            <label for="transactionStatementPaymentOn">
+              <span id="transactionStatementPaymentOnLabel">支払日</span>
+              <input id="transactionStatementPaymentOn" name="statement_payment_on" type="date" required>
+            </label>
+            <p id="transactionStatementPaymentOnError" class="field-error"></p>
+          </div>
+
+          <div id="transactionUsedOnGroup" class="field-group">
+            <label for="transactionUsedOn">
+              <span>利用日</span>
+              <input id="transactionUsedOn" name="used_on" type="date">
+            </label>
+            <p id="transactionUsedOnError" class="field-error"></p>
+          </div>
+
+          <div class="field-group manual-grid-wide">
+            <label for="transactionMerchant">
+              <span id="transactionMerchantLabel">店名・商品名</span>
+              <input id="transactionMerchant" name="merchant" type="text" maxlength="255" autocomplete="off" required>
+            </label>
+            <p id="transactionMerchantError" class="field-error"></p>
+          </div>
+
+          <div class="field-group">
+            <label for="transactionCardUser">
+              <span>利用者</span>
+              <select id="transactionCardUser" name="card_user" required></select>
+            </label>
+            <p id="transactionCardUserError" class="field-error"></p>
+          </div>
+
+          <div class="field-group">
+            <label for="transactionPaymentMethod">
+              <span id="transactionPaymentMethodLabel">決済方法</span>
+              <select id="transactionPaymentMethod" name="payment_method" required></select>
+            </label>
+            <p id="transactionPaymentMethodError" class="field-error"></p>
+          </div>
+
+          <div id="transactionPaymentCategoryGroup" class="field-group">
+            <label for="transactionPaymentCategory">
+              <span>支払区分</span>
+              <input id="transactionPaymentCategory" name="payment_category" type="text" maxlength="100" autocomplete="off">
+            </label>
+            <p id="transactionPaymentCategoryError" class="field-error"></p>
+          </div>
+
+          <div class="field-group">
+            <label for="transactionBillingAmount">
+              <span id="transactionBillingAmountLabel">当月支払</span>
+              <input id="transactionBillingAmount" name="billing_amount" type="text" inputmode="numeric" autocomplete="off" required>
+            </label>
+            <p id="transactionBillingAmountError" class="field-error"></p>
+          </div>
+
+          <div id="transactionUsageAmountGroup" class="field-group">
+            <label for="transactionUsageAmount">
+              <span>利用金額</span>
+              <input id="transactionUsageAmount" name="usage_amount" type="text" inputmode="numeric" autocomplete="off">
+            </label>
+            <p id="transactionUsageAmountError" class="field-error"></p>
+          </div>
+
+          <div id="transactionCarriedForwardAmountGroup" class="field-group">
+            <label for="transactionCarriedForwardAmount">
+              <span>繰越</span>
+              <input id="transactionCarriedForwardAmount" name="carried_forward_amount" type="text" inputmode="numeric" autocomplete="off">
+            </label>
+            <p id="transactionCarriedForwardAmountError" class="field-error"></p>
+          </div>
+
+          <div id="transactionAdjustmentAmountGroup" class="field-group">
+            <label for="transactionAdjustmentAmount">
+              <span>調整</span>
+              <input id="transactionAdjustmentAmount" name="adjustment_amount" type="text" inputmode="numeric" autocomplete="off">
+            </label>
+            <p id="transactionAdjustmentAmountError" class="field-error"></p>
+          </div>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="secondary" id="cancelTransactionButton" type="button">閉じる</button>
+          <button id="saveTransactionButton" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="loginDialog">
       <form id="loginForm" method="dialog" class="dialog-form">
+        <button id="closeLoginDialogButton" class="dialog-close" type="button" aria-label="閉じる">☓</button>
         <h2>ログイン</h2>
         <label>
           <span>パスワード</span>
