@@ -2,14 +2,14 @@
 
 PHP + MySQL household budget app for `https://example.com/budget`.
 
-The app exposes read-only transaction views publicly. Admin-only changes, including manual expense entry, CSV import, and import deletion, require the single admin password configured outside the web root.
+The app exposes read-only transaction views publicly. Admin-only changes, including manual transaction entry, CSV import, and import deletion, require the single admin password configured outside the web root.
 
 ## Repository Layout
 
 ```text
 database/schema.sql      Current MySQL/MariaDB schema
 public/                  Files mirrored to Xserver public_html/budget
-public/admin/            Admin screen for manual expense entry and CSV import
+public/admin/            Admin screen for manual transaction entry and CSV import
 public/api/              JSON API endpoints
 public/assets/           Vanilla CSS/JavaScript
 public/lib/app.php       Shared PHP runtime helpers
@@ -36,10 +36,13 @@ Public read API:
 - `GET /api/summary.php`
 
 `GET /api/transactions.php` supports `date_from`, `date_to`, `limit`, and `offset`.
-Dates filter `statement_payment_on`, `limit` defaults to `100`, and rows are ordered by `statement_payment_on DESC`, with `1回` before other payment categories within the same payment date, then by `payment_method` with `銀行口座` first, and `id DESC` as the final tie-breaker.
+Dates filter the selected transaction month: expense rows use `statement_payment_on`, and income rows store the received date in `statement_payment_on`.
+Rows include `transaction_type`, which is either `expense` or `income`.
+When `limit` or `offset` is present, paging is applied with the previous `limit=100` default and `limit=200` maximum. When both are omitted, all rows in the selected period are returned.
+Rows are ordered with income before expense, then by `statement_payment_on DESC`, with `1回` before other payment categories within the same payment date, then by `payment_method` with `銀行口座` first, and `id DESC` as the final tie-breaker.
 
-`GET /api/summary.php` supports `date_from` and `date_to`, groups by payment month from `statement_payment_on`, and sums `billing_amount`.
-The public `/budget/` UI exposes only start/end payment-month selectors for months with data.
+`GET /api/summary.php` supports `date_from` and `date_to`, groups by month from `statement_payment_on`, and returns `income_amount` and `expense_amount`.
+The public `/budget/` UI exposes only start/end month selectors for months with data.
 
 Admin API:
 
@@ -54,7 +57,7 @@ Admin API:
 All API responses are JSON with `Cache-Control: no-store`. Mutating admin requests require both an authenticated PHP session and the `X-CSRF-Token` header.
 
 `GET /api/imports.php` defaults to `limit=5`, supports `offset`, and returns import log rows in reverse import order.
-Each import row includes `source_type`, where `csv` is an uploaded PayPay card CSV, `bank_csv` is an uploaded bank-account CSV, and `manual` is a single hand-entered expense.
+Each import row includes `source_type`, where `csv` is an uploaded PayPay card CSV, `bank_csv` is an uploaded bank-account CSV, and `manual` is a single hand-entered transaction.
 `DELETE /api/imports.php?id=...` physically deletes the import row. Transactions still attached to that import are deleted by the foreign key cascade.
 
 ## Initial Xserver Setup
@@ -112,17 +115,33 @@ ssh -p YOUR_XSERVER_PORT YOUR_XSERVER_USER@YOUR_XSERVER_HOST \
   'mysql -h YOUR_DB_HOST -u YOUR_DB_USER -p YOUR_DB_NAME < ~/YOUR_DOMAIN/20260531_add_imports_source_type.sql'
 ```
 
-## Manual Expense Entry
+Existing deployments created before income support must add `transactions.transaction_type`.
+Copy the migration file to the server, then run it against the production database:
+
+```sh
+scp -P YOUR_XSERVER_PORT database/migrations/20260531_add_transaction_type.sql \
+  YOUR_XSERVER_USER@YOUR_XSERVER_HOST:~/YOUR_DOMAIN/20260531_add_transaction_type.sql
+
+ssh -p YOUR_XSERVER_PORT YOUR_XSERVER_USER@YOUR_XSERVER_HOST \
+  'mysql -h YOUR_DB_HOST -u YOUR_DB_USER -p YOUR_DB_NAME < ~/YOUR_DOMAIN/20260531_add_transaction_type.sql'
+```
+
+## Manual Transaction Entry
 
 1. Open `https://example.com/budget/admin/`.
 2. Enter the admin password in the login dialog.
-3. Use `データ追加` -> `追加` to enter one expense at a time.
+3. Use `データ追加` -> `追加` to enter one income or expense transaction at a time.
 
 Manual entry creates one `imports` row with `source_type='manual'`, `source_filename='手入力'`, and `row_count=1`.
 
-Supported payment methods are fixed to the known PayPay card values plus `銀行口座` and `現金`.
+Expense entry stores `transaction_type='expense'`. If `transaction_type` is omitted in the API request, the request is treated as an expense for backward compatibility.
+Supported expense payment methods are fixed to the known PayPay card values plus `銀行口座` and `現金`.
 For `銀行口座` and `現金`, `statement_payment_on` is forced to `used_on` and `payment_category` is forced to `1回`.
 For card payment methods, the form accepts `1回` or `均等 N／M`; `M` must be one of `2,3,5,6,10,12,15,18,20,24,30,36,48` and `N` must be within `1..M`.
+
+Income entry stores `transaction_type='income'`. The API accepts `received_on`, `description`, `receiving_method`, and `amount`.
+Supported receiving methods are `現金` and `銀行口座`.
+Income stores `received_on` in both `statement_payment_on` and `used_on`, stores `description` in `merchant`, stores `receiving_method` in `payment_method`, and uses `payment_category='入金'`.
 
 ## CSV Import
 
@@ -135,9 +154,9 @@ The importer validates CSV headers and values, not file extensions.
 Supported CSV formats:
 
 - PayPay card detail CSV in UTF-8. Each file must contain exactly one `当月お支払日`.
-- Bank-account CSV in CP932/SJIS with the bank export headers. Only positive `お支払金額` rows are imported as `銀行口座`; `操作日` becomes both `used_on` and `statement_payment_on`, `摘要` becomes `merchant`, and `お支払金額` becomes both `usage_amount` and `billing_amount`.
+- Bank-account CSV in CP932/SJIS with the bank export headers. Positive `お支払金額` rows are imported as `expense`; positive `お預り金額` rows are imported as `income`. `操作日` becomes both `used_on` and `statement_payment_on`, `摘要` becomes `merchant`, and the amount column becomes both `usage_amount` and `billing_amount`.
 
-Bank-account merchant exclusions are configured in `public/lib/payment_import_exclusions.php` under `bank_merchant_exact`. Matching is exact after trimming leading and trailing ASCII/full-width whitespace.
+Bank-account merchant exclusions are configured in `public/lib/payment_import_exclusions.php` under `bank_merchant_exact`. Matching is exact after trimming leading and trailing ASCII/full-width whitespace. Exclusions apply only to `お支払金額` expense rows; `お預り金額` income rows are not excluded by this list.
 
 Re-uploading the same PayPay payment-month CSV performs a month replacement:
 
@@ -150,8 +169,9 @@ Re-uploading the same PayPay payment-month CSV performs a month replacement:
 Re-uploading a bank-account CSV replaces the operation-date range covered by that CSV:
 
 - Existing `bank_csv` transactions in the range are physically deleted first.
-- Existing manual `銀行口座` imports in the range are physically deleted first.
-- Rows excluded by `bank_merchant_exact` and income rows with only `お預り金額` are not inserted.
+- Existing manual `銀行口座` imports in the range are physically deleted first, for both income and expense rows.
+- Positive `お支払金額` rows excluded by `bank_merchant_exact` are not inserted.
+- Positive `お預り金額` rows are inserted as income.
 
 The CSV file is treated as the source of truth for imported payment rows. Per-row diff tracking, transaction soft delete/restore, budget date/amount derivation, and labels are not part of the current schema or API.
 
