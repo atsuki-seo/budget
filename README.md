@@ -50,14 +50,18 @@ Admin API:
 - `POST /api/session.php`
 - `DELETE /api/session.php`
 - `POST /api/transactions.php`
+- `GET /api/manual_transactions.php`
 - `POST /api/imports.php`
 - `GET /api/imports.php`
 - `DELETE /api/imports.php?id=...`
 
 All API responses are JSON with `Cache-Control: no-store`. Mutating admin requests require both an authenticated PHP session and the `X-CSRF-Token` header.
 
-`GET /api/imports.php` defaults to `limit=5`, supports `offset`, and returns import log rows in reverse import order.
+`GET /api/manual_transactions.php` defaults to `transaction_type=expense`, `limit=5`, supports `transaction_type=expense|income` and `offset`, and returns hand-entered transactions in reverse creation order.
+
+`GET /api/imports.php` defaults to `limit=5`, supports `offset` and optional comma-separated `source_types`, and returns import log rows in reverse import order.
 Each import row includes `source_type`, where `csv` is an uploaded PayPay card CSV, `bank_csv` is an uploaded bank-account CSV, and `manual` is a single hand-entered transaction.
+When `source_types` is omitted, all import rows are returned. The admin UI uses `source_types=csv,bank_csv` so hand-entered rows appear only in the `決済情報の追加` list.
 `DELETE /api/imports.php?id=...` physically deletes the import row. Transactions still attached to that import are deleted by the foreign key cascade.
 
 ## Initial Xserver Setup
@@ -130,9 +134,10 @@ ssh -p YOUR_XSERVER_PORT YOUR_XSERVER_USER@YOUR_XSERVER_HOST \
 
 1. Open `https://example.com/budget/admin/`.
 2. Enter the admin password in the login dialog.
-3. Use `データ追加` -> `追加` to enter one income or expense transaction at a time.
+3. Use `決済情報の追加` -> `追加` to enter one income or expense transaction at a time.
 
 Manual entry creates one `imports` row with `source_type='manual'`, `source_filename='手入力'`, and `row_count=1`.
+The admin screen lists hand-entered expense and income rows separately under `決済情報の追加`.
 
 Expense entry stores `transaction_type='expense'`. If `transaction_type` is omitted in the API request, the request is treated as an expense for backward compatibility.
 Supported expense payment methods are fixed to the known PayPay card values plus `銀行口座` and `現金`.

@@ -4,6 +4,33 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/app.php';
 
+function budget_import_source_types_param(): array
+{
+    $raw = $_GET['source_types'] ?? '';
+    if ($raw === null || $raw === '') {
+        return [];
+    }
+
+    if (!is_string($raw)) {
+        throw new InvalidArgumentException('source_types must be comma-separated text.');
+    }
+
+    $sourceTypes = [];
+    foreach (explode(',', $raw) as $sourceType) {
+        $sourceType = trim($sourceType);
+        if ($sourceType === '') {
+            continue;
+        }
+        if (!in_array($sourceType, ['csv', 'bank_csv', 'manual'], true)) {
+            throw new InvalidArgumentException('source_types contains an unsupported source type.');
+        }
+
+        $sourceTypes[$sourceType] = true;
+    }
+
+    return array_keys($sourceTypes);
+}
+
 try {
     $method = budget_require_method(['GET', 'POST', 'DELETE']);
     budget_require_admin();
@@ -12,11 +39,20 @@ try {
         $pdo = budget_pdo();
         $limit = budget_int_param('limit', 5, 1, 200);
         $offset = budget_int_param('offset', 0, 0, 1000000);
+        $sourceTypes = budget_import_source_types_param();
+        $params = [];
+        $whereSql = '';
 
-        $totalStmt = $pdo->query('SELECT COUNT(*) FROM imports');
+        if ($sourceTypes !== []) {
+            $whereSql = 'WHERE source_type IN (' . implode(', ', array_fill(0, count($sourceTypes), '?')) . ')';
+            $params = $sourceTypes;
+        }
+
+        $totalStmt = $pdo->prepare("SELECT COUNT(*) FROM imports $whereSql");
+        $totalStmt->execute($params);
         $total = (int)$totalStmt->fetchColumn();
 
-        $stmt = $pdo->query(
+        $stmt = $pdo->prepare(
             "SELECT
                 id,
                 source_type,
@@ -25,9 +61,11 @@ try {
                 row_count,
                 imported_at
              FROM imports
+             $whereSql
              ORDER BY imported_at DESC, id DESC
              LIMIT $limit OFFSET $offset"
         );
+        $stmt->execute($params);
 
         $items = [];
         foreach ($stmt->fetchAll() as $row) {

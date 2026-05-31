@@ -15,6 +15,11 @@ const state = {
   importsTotal: 0,
   importsLimit: 5,
   importsOffset: 0,
+  manualTransactions: [],
+  manualTransactionsTotal: 0,
+  manualTransactionsLimit: 5,
+  manualTransactionsOffset: 0,
+  manualTransactionsType: 'expense',
   availableMonths: [],
   defaultMonth: '',
   selectedMonthFrom: '',
@@ -224,6 +229,12 @@ function bindAdminElements() {
   elements.manualInstallmentNumber = $('#manualInstallmentNumber');
   elements.manualContinue = $('#manualContinue');
   elements.manualPaymentCategoryMode = [...document.querySelectorAll('input[name="payment_category_mode"]')];
+  elements.manualListTransactionType = [...document.querySelectorAll('input[name="manual_list_transaction_type"]')];
+  elements.manualTransactionsHead = $('#manualTransactionsHead');
+  elements.manualTransactionsBody = $('#manualTransactionsBody');
+  elements.manualTransactionsResultCount = $('#manualTransactionsResultCount');
+  elements.prevManualTransactionsPageButton = $('#prevManualTransactionsPageButton');
+  elements.nextManualTransactionsPageButton = $('#nextManualTransactionsPageButton');
   elements.manualErrors = {
     transactionType: $('#manualTransactionTypeError'),
     usedOn: $('#manualUsedOnError'),
@@ -338,6 +349,13 @@ function setManualTransactionType(transactionType) {
     input.checked = input.value === transactionType;
   }
   updateManualTransactionTypeControls();
+}
+
+function setManualListTransactionType(transactionType) {
+  state.manualTransactionsType = transactionType === 'income' ? 'income' : 'expense';
+  for (const input of elements.manualListTransactionType) {
+    input.checked = input.value === state.manualTransactionsType;
+  }
 }
 
 function selectedPaymentCategoryMode() {
@@ -652,8 +670,13 @@ async function submitManualEntry(event) {
       method: 'POST',
       json: payload,
     });
+    setManualListTransactionType(payload.transaction_type);
+    state.manualTransactionsOffset = 0;
     state.importsOffset = 0;
-    await loadImports();
+    await Promise.all([
+      loadManualTransactions(),
+      loadImports(),
+    ]);
     showToast('追加しました。');
 
     if (elements.manualContinue.checked) {
@@ -725,7 +748,10 @@ function bindCommonEvents() {
       }
 
       renderAuth();
-      await loadImports();
+      await Promise.all([
+        loadImports(),
+        loadManualTransactions(),
+      ]);
     } catch (error) {
       showToast(error.message);
     }
@@ -817,6 +843,14 @@ function bindAdminEvents() {
     input.addEventListener('change', updateManualTransactionTypeControls);
   }
 
+  for (const input of elements.manualListTransactionType) {
+    input.addEventListener('change', async () => {
+      setManualListTransactionType(input.value);
+      state.manualTransactionsOffset = 0;
+      await loadManualTransactions();
+    });
+  }
+
   elements.manualPaymentMethod.addEventListener('change', updateManualPaymentMethodControls);
 
   for (const input of elements.manualPaymentCategoryMode) {
@@ -846,7 +880,11 @@ function bindAdminEvents() {
       elements.importForm.reset();
       updateImportSubmitState();
       state.importsOffset = 0;
-      await loadImports();
+      state.manualTransactionsOffset = 0;
+      await Promise.all([
+        loadImports(),
+        loadManualTransactions(),
+      ]);
     } catch (error) {
       updateImportSubmitState();
       showToast(error.message);
@@ -861,6 +899,16 @@ function bindAdminEvents() {
   elements.nextImportsPageButton.addEventListener('click', async () => {
     state.importsOffset += state.importsLimit;
     await loadImports();
+  });
+
+  elements.prevManualTransactionsPageButton.addEventListener('click', async () => {
+    state.manualTransactionsOffset = Math.max(0, state.manualTransactionsOffset - state.manualTransactionsLimit);
+    await loadManualTransactions();
+  });
+
+  elements.nextManualTransactionsPageButton.addEventListener('click', async () => {
+    state.manualTransactionsOffset += state.manualTransactionsLimit;
+    await loadManualTransactions();
   });
 }
 
@@ -1477,12 +1525,13 @@ async function loadImports() {
     const params = new URLSearchParams({
       limit: String(state.importsLimit),
       offset: String(state.importsOffset),
+      source_types: 'csv,bank_csv',
     });
     const data = await api(`api/imports.php?${params.toString()}`);
     state.imports = data.items || [];
     state.importsTotal = Number(data.total || 0);
-    state.importsLimit = Number(data.limit || state.importsLimit);
-    state.importsOffset = Number(data.offset || state.importsOffset);
+    state.importsLimit = Number(data.limit ?? state.importsLimit);
+    state.importsOffset = Number(data.offset ?? state.importsOffset);
 
     if (state.imports.length === 0 && state.importsTotal > 0 && state.importsOffset >= state.importsTotal) {
       state.importsOffset = Math.max(0, state.importsOffset - state.importsLimit);
@@ -1540,6 +1589,117 @@ function renderImports() {
   elements.importsBody.replaceChildren(...rows);
 }
 
+async function loadManualTransactions() {
+  try {
+    const params = new URLSearchParams({
+      transaction_type: state.manualTransactionsType,
+      limit: String(state.manualTransactionsLimit),
+      offset: String(state.manualTransactionsOffset),
+    });
+    const data = await api(`api/manual_transactions.php?${params.toString()}`);
+    state.manualTransactions = data.items || [];
+    state.manualTransactionsTotal = Number(data.total || 0);
+    state.manualTransactionsLimit = Number(data.limit ?? state.manualTransactionsLimit);
+    state.manualTransactionsOffset = Number(data.offset ?? state.manualTransactionsOffset);
+    setManualListTransactionType(data.transaction_type);
+
+    if (
+      state.manualTransactions.length === 0
+      && state.manualTransactionsTotal > 0
+      && state.manualTransactionsOffset >= state.manualTransactionsTotal
+    ) {
+      state.manualTransactionsOffset = Math.max(0, state.manualTransactionsOffset - state.manualTransactionsLimit);
+      await loadManualTransactions();
+      return;
+    }
+
+    renderManualTransactions();
+  } catch (error) {
+    if (error.status === 401) {
+      state.loggedIn = false;
+      renderAuth();
+      showLoginDialog();
+      return;
+    }
+
+    showToast(error.message);
+  }
+}
+
+function renderManualTransactionsHead() {
+  const isIncome = state.manualTransactionsType === 'income';
+  const headers = isIncome
+    ? [
+      ['受取日'],
+      ['摘要'],
+      ['受取方法'],
+      ['金額', 'number'],
+      ['操作'],
+    ]
+    : [
+      ['支払日'],
+      ['店名'],
+      ['決済方法'],
+      ['支払区分'],
+      ['金額', 'number'],
+      ['操作'],
+    ];
+  const row = createElement('tr');
+  row.replaceChildren(...headers.map(([text, className]) => createElement('th', { text, className })));
+  elements.manualTransactionsHead.replaceChildren(row);
+}
+
+function renderManualTransactions() {
+  const isIncome = state.manualTransactionsType === 'income';
+  const start = state.manualTransactionsTotal === 0 ? 0 : state.manualTransactionsOffset + 1;
+  const end = Math.min(state.manualTransactionsTotal, state.manualTransactionsOffset + state.manualTransactions.length);
+  elements.manualTransactionsResultCount.textContent = `${start}-${end} / ${state.manualTransactionsTotal}件`;
+  elements.prevManualTransactionsPageButton.disabled = state.manualTransactionsOffset <= 0;
+  elements.nextManualTransactionsPageButton.disabled = (
+    state.manualTransactionsOffset + state.manualTransactionsLimit >= state.manualTransactionsTotal
+  );
+
+  renderManualTransactionsHead();
+
+  if (state.manualTransactions.length === 0) {
+    renderEmptyRow(
+      elements.manualTransactionsBody,
+      isIncome ? '手入力の収入なし' : '手入力の支出なし',
+      isIncome ? 5 : 6
+    );
+    return;
+  }
+
+  const rows = state.manualTransactions.map((item) => {
+    const row = createElement('tr');
+    if (isIncome) {
+      appendCell(row, '受取日', formatDate(item.statement_payment_on));
+      appendCell(row, '摘要', item.merchant, 'merchant');
+      appendCell(row, '受取方法', item.payment_method);
+      appendCell(row, '金額', formatCurrency(item.billing_amount), 'number');
+    } else {
+      appendCell(row, '支払日', formatDate(item.statement_payment_on));
+      appendCell(row, '店名', item.merchant, 'merchant');
+      appendCell(row, '決済方法', item.payment_method);
+      appendCell(row, '支払区分', item.payment_category);
+      appendCell(row, '金額', formatCurrency(item.billing_amount), 'number');
+    }
+
+    const actionCell = createElement('td', { attrs: { 'data-label': '操作' } });
+    const button = createElement('button', {
+      className: 'danger',
+      text: '削除',
+      attrs: { type: 'button' },
+    });
+    button.addEventListener('click', () => deleteManualTransaction(item.import_id));
+    actionCell.append(button);
+    row.append(actionCell);
+    return row;
+  });
+
+  elements.manualTransactionsBody.replaceChildren(...rows);
+}
+
 async function deleteImport(id) {
   if (!window.confirm('この取込を削除しますか。')) {
     return;
@@ -1548,6 +1708,22 @@ async function deleteImport(id) {
   try {
     await api(`api/imports.php?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
     await loadImports();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function deleteManualTransaction(importId) {
+  if (!window.confirm('この手入力データを削除しますか。')) {
+    return;
+  }
+
+  try {
+    await api(`api/imports.php?id=${encodeURIComponent(importId)}`, { method: 'DELETE' });
+    await Promise.all([
+      loadManualTransactions(),
+      loadImports(),
+    ]);
   } catch (error) {
     showToast(error.message);
   }
@@ -1567,7 +1743,10 @@ async function initAdminPage() {
   await loadSession();
 
   if (state.loggedIn) {
-    await loadImports();
+    await Promise.all([
+      loadImports(),
+      loadManualTransactions(),
+    ]);
   } else {
     showLoginDialog();
   }

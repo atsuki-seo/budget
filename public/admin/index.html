@@ -37,9 +37,39 @@
         <section class="panel" aria-labelledby="manualEntryHeading">
           <div class="section-header">
             <div>
-              <h2 id="manualEntryHeading">データ追加</h2>
+              <h2 id="manualEntryHeading">決済情報の追加</h2>
             </div>
             <button id="openManualDialogButton" type="button">追加</button>
+          </div>
+          <div class="manual-entry-list" aria-labelledby="manualTransactionsHeading">
+            <div class="section-header table-header manual-transactions-header">
+              <div>
+                <h3 id="manualTransactionsHeading">手入力一覧</h3>
+                <p id="manualTransactionsResultCount" class="muted">-</p>
+              </div>
+              <div class="manual-transactions-controls">
+                <div class="segmented manual-list-segmented" role="group" aria-label="手入力一覧の種別">
+                  <label>
+                    <input type="radio" name="manual_list_transaction_type" value="expense" checked>
+                    <span>支出</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="manual_list_transaction_type" value="income">
+                    <span>収入</span>
+                  </label>
+                </div>
+                <div class="pager">
+                  <button id="prevManualTransactionsPageButton" class="secondary" type="button">前へ</button>
+                  <button id="nextManualTransactionsPageButton" class="secondary" type="button">次へ</button>
+                </div>
+              </div>
+            </div>
+            <div class="table-wrap compact">
+              <table class="manual-transactions-table">
+                <thead id="manualTransactionsHead"></thead>
+                <tbody id="manualTransactionsBody"></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -78,7 +108,7 @@
 
     <dialog id="manualEntryDialog">
       <form id="manualEntryForm" method="dialog" class="dialog-form manual-dialog-form" novalidate>
-        <h2>データ追加</h2>
+        <h2>決済情報の追加</h2>
 
         <div class="manual-grid">
           <fieldset class="field-group manual-grid-wide">
