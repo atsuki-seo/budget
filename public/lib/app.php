@@ -51,6 +51,16 @@ const BUDGET_PAYMENT_METHODS = [
     '現金',
 ];
 
+const BUDGET_TRANSACTION_TYPES = [
+    'expense',
+    'income',
+];
+
+const BUDGET_RECEIVING_METHODS = [
+    '現金',
+    '銀行口座',
+];
+
 const BUDGET_INSTALLMENT_COUNTS = [
     2,
     3,
@@ -435,7 +445,22 @@ function budget_normalize_manual_payment_category($value): string
     return $paymentCategory;
 }
 
-function budget_normalize_manual_transaction(array $data): array
+function budget_normalize_manual_transaction_type(array $data): string
+{
+    $raw = $data['transaction_type'] ?? 'expense';
+    if ($raw === '') {
+        $raw = 'expense';
+    }
+
+    $transactionType = budget_clean_text($raw, 20, '種別');
+    if (!in_array($transactionType, BUDGET_TRANSACTION_TYPES, true)) {
+        throw new InvalidArgumentException('種別 is invalid.');
+    }
+
+    return $transactionType;
+}
+
+function budget_normalize_manual_expense_transaction(array $data): array
 {
     $usedOn = budget_parse_manual_date($data['used_on'] ?? '', '利用日');
     $merchant = budget_clean_text($data['merchant'] ?? '', 255, '店名・商品名');
@@ -458,6 +483,7 @@ function budget_normalize_manual_transaction(array $data): array
     }
 
     return [
+        'transaction_type' => 'expense',
         'statement_payment_on' => $statementPaymentOn,
         'used_on' => $usedOn,
         'merchant' => $merchant,
@@ -469,6 +495,45 @@ function budget_normalize_manual_transaction(array $data): array
         'carried_forward_amount' => 0,
         'adjustment_amount' => 0,
     ];
+}
+
+function budget_normalize_manual_income_transaction(array $data): array
+{
+    $receivedOn = budget_parse_manual_date($data['received_on'] ?? ($data['used_on'] ?? ''), '受取日');
+    $description = budget_clean_text($data['description'] ?? ($data['merchant'] ?? ''), 255, '摘要');
+    if ($description === '') {
+        throw new InvalidArgumentException('摘要 is required.');
+    }
+
+    $receivingMethod = budget_clean_text($data['receiving_method'] ?? ($data['payment_method'] ?? ''), 100, '受取方法');
+    if (!in_array($receivingMethod, BUDGET_RECEIVING_METHODS, true)) {
+        throw new InvalidArgumentException('受取方法 is invalid.');
+    }
+
+    $amount = budget_parse_manual_amount($data['amount'] ?? '', '金額');
+
+    return [
+        'transaction_type' => 'income',
+        'statement_payment_on' => $receivedOn,
+        'used_on' => $receivedOn,
+        'merchant' => $description,
+        'card_user' => '本人',
+        'payment_method' => $receivingMethod,
+        'payment_category' => '入金',
+        'usage_amount' => $amount,
+        'billing_amount' => $amount,
+        'carried_forward_amount' => 0,
+        'adjustment_amount' => 0,
+    ];
+}
+
+function budget_normalize_manual_transaction(array $data): array
+{
+    if (budget_normalize_manual_transaction_type($data) === 'income') {
+        return budget_normalize_manual_income_transaction($data);
+    }
+
+    return budget_normalize_manual_expense_transaction($data);
 }
 
 function budget_optional_date_param(string $name): ?string
@@ -641,6 +706,7 @@ function budget_normalize_csv_row(array $row, int $line): array
     $adjustmentAmount = budget_parse_csv_amount($row['調整額'], '調整額', $line);
 
     $normalized = [
+        'transaction_type' => 'expense',
         'statement_payment_on' => $statementPaymentOn,
         'used_on' => $usedOn,
         'merchant' => $merchant,
@@ -695,13 +761,21 @@ function budget_validate_bank_csv_time(array $row, int $line): void
 
 function budget_normalize_bank_csv_row(array $row, int $line, string $usedOn): ?array
 {
-    if (trim($row['お支払金額']) === '') {
+    $paymentAmount = trim($row['お支払金額']);
+    $depositAmount = trim($row['お預り金額']);
+    if ($paymentAmount === '' && $depositAmount === '') {
         return null;
     }
 
-    $amount = budget_parse_csv_amount($row['お支払金額'], 'お支払金額', $line);
+    if ($paymentAmount !== '' && $depositAmount !== '') {
+        throw new InvalidArgumentException("お支払金額 and お預り金額 on line $line cannot both be set.");
+    }
+
+    $isIncome = $depositAmount !== '';
+    $amountField = $isIncome ? 'お預り金額' : 'お支払金額';
+    $amount = budget_parse_csv_amount($row[$amountField], $amountField, $line);
     if ($amount <= 0) {
-        throw new InvalidArgumentException("お支払金額 on line $line must be greater than 0.");
+        throw new InvalidArgumentException("$amountField on line $line must be greater than 0.");
     }
 
     $merchant = budget_clean_text(budget_trim_import_text($row['摘要']), 255, "摘要 on line $line");
@@ -709,18 +783,19 @@ function budget_normalize_bank_csv_row(array $row, int $line, string $usedOn): ?
         throw new InvalidArgumentException("摘要 on line $line is required.");
     }
 
-    if (budget_is_payment_import_merchant_excluded($merchant)) {
+    if (!$isIncome && budget_is_payment_import_merchant_excluded($merchant)) {
         return null;
     }
 
     return [
         'fields' => [
+            'transaction_type' => $isIncome ? 'income' : 'expense',
             'statement_payment_on' => $usedOn,
             'used_on' => $usedOn,
             'merchant' => $merchant,
             'card_user' => '本人',
             'payment_method' => '銀行口座',
-            'payment_category' => '1回',
+            'payment_category' => $isIncome ? '入金' : '1回',
             'usage_amount' => $amount,
             'billing_amount' => $amount,
             'carried_forward_amount' => 0,
@@ -972,16 +1047,17 @@ function budget_import_csv(PDO $pdo, string $path, string $originalName): array
 
         $insertTransaction = $pdo->prepare(
             'INSERT INTO transactions
-                (import_id, statement_payment_on, used_on, merchant, card_user, payment_method, payment_category,
+                (import_id, transaction_type, statement_payment_on, used_on, merchant, card_user, payment_method, payment_category,
                  usage_amount, billing_amount, carried_forward_amount, adjustment_amount)
              VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
         foreach ($parsed['rows'] as $row) {
             $fields = $row['fields'];
             $insertTransaction->execute([
                 $importId,
+                $fields['transaction_type'],
                 $fields['statement_payment_on'],
                 $fields['used_on'],
                 $fields['merchant'],
@@ -1033,13 +1109,14 @@ function budget_create_manual_transaction(PDO $pdo, array $data): array
 
         $insertTransaction = $pdo->prepare(
             'INSERT INTO transactions
-                (import_id, statement_payment_on, used_on, merchant, card_user, payment_method, payment_category,
+                (import_id, transaction_type, statement_payment_on, used_on, merchant, card_user, payment_method, payment_category,
                  usage_amount, billing_amount, carried_forward_amount, adjustment_amount)
              VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         $insertTransaction->execute([
             $importId,
+            $fields['transaction_type'],
             $fields['statement_payment_on'],
             $fields['used_on'],
             $fields['merchant'],

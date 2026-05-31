@@ -79,6 +79,29 @@
         <h2>データ追加</h2>
 
         <div class="manual-grid">
+          <fieldset class="field-group manual-grid-wide">
+            <legend>種別</legend>
+            <div class="segmented" role="group" aria-label="種別">
+              <label>
+                <input type="radio" name="transaction_type" value="expense" checked>
+                <span>支出</span>
+              </label>
+              <label>
+                <input type="radio" name="transaction_type" value="income">
+                <span>収入</span>
+              </label>
+            </div>
+            <p id="manualTransactionTypeError" class="field-error"></p>
+          </fieldset>
+
+          <div class="field-group">
+            <label for="manualPaymentMethod">
+              <span id="manualPaymentMethodLabel">決済方法</span>
+              <select id="manualPaymentMethod" name="payment_method" required></select>
+            </label>
+            <p id="manualPaymentMethodError" class="field-error"></p>
+          </div>
+
           <div class="field-group">
             <label for="manualUsedOn">
               <span id="manualUsedOnLabel">利用日</span>
@@ -87,17 +110,9 @@
             <p id="manualUsedOnError" class="field-error"></p>
           </div>
 
-          <div class="field-group">
-            <label for="manualPaymentMethod">
-              <span>決済方法</span>
-              <select id="manualPaymentMethod" name="payment_method" required></select>
-            </label>
-            <p id="manualPaymentMethodError" class="field-error"></p>
-          </div>
-
           <div class="field-group manual-grid-wide">
             <label for="manualMerchant">
-              <span>店名・商品名</span>
+              <span id="manualMerchantLabel">店名・商品名</span>
               <input id="manualMerchant" name="merchant" type="text" maxlength="255" autocomplete="off" required>
             </label>
             <p id="manualMerchantError" class="field-error"></p>

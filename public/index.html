@@ -43,24 +43,48 @@
             <select id="date_to_month" name="date_to_month"></select>
           </label>
         </form>
-        <div class="summary-total">
-          <span>合計</span>
-          <strong id="summaryAmount">-</strong>
+        <div class="summary-totals" aria-label="合計">
+          <div class="summary-total income-total">
+            <span>収入合計</span>
+            <strong id="summaryIncomeAmount">-</strong>
+          </div>
+          <div class="summary-total expense-total">
+            <span>支出合計</span>
+            <strong id="summaryExpenseAmount">-</strong>
+          </div>
         </div>
         <button id="resetFiltersButton" class="secondary" type="button" hidden>リセット</button>
       </section>
     </div>
 
     <main class="layout">
-      <section class="panel" aria-labelledby="transactionsHeading">
+      <section class="panel" aria-labelledby="incomeTransactionsHeading">
         <div class="section-header table-header">
           <div>
-            <h2 id="transactionsHeading">明細</h2>
-            <p id="resultCount" class="muted">-</p>
+            <h2 id="incomeTransactionsHeading">収入明細</h2>
+            <p id="incomeResultCount" class="muted">-</p>
           </div>
-          <div class="pager">
-            <button id="prevPageButton" class="secondary" type="button">前へ</button>
-            <button id="nextPageButton" class="secondary" type="button">次へ</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>受取日</th>
+                <th>摘要</th>
+                <th>受取方法</th>
+                <th class="number">金額</th>
+              </tr>
+            </thead>
+            <tbody id="incomeTransactionsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="expenseTransactionsHeading">
+        <div class="section-header table-header">
+          <div>
+            <h2 id="expenseTransactionsHeading">支出明細</h2>
+            <p id="expenseResultCount" class="muted">-</p>
           </div>
         </div>
         <div class="table-wrap">
@@ -78,7 +102,7 @@
                 <th class="number">調整</th>
               </tr>
             </thead>
-            <tbody id="transactionsBody"></tbody>
+            <tbody id="expenseTransactionsBody"></tbody>
           </table>
         </div>
       </section>

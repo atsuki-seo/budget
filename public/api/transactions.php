@@ -28,11 +28,13 @@ try {
     $countStmt->execute($params);
     $total = (int)$countStmt->fetchColumn();
 
-    $limit = budget_int_param('limit', 100, 1, 200);
-    $offset = budget_int_param('offset', 0, 0, 1000000);
+    $usesPaging = array_key_exists('limit', $_GET) || array_key_exists('offset', $_GET);
+    $limit = $usesPaging ? budget_int_param('limit', 100, 1, 200) : $total;
+    $offset = $usesPaging ? budget_int_param('offset', 0, 0, 1000000) : 0;
 
     $sql = "SELECT
                 t.id,
+                t.transaction_type,
                 t.statement_payment_on,
                 t.used_on,
                 t.merchant,
@@ -46,12 +48,13 @@ try {
             FROM transactions t
             $whereSql
             ORDER BY
+                CASE WHEN t.transaction_type = 'income' THEN 0 ELSE 1 END ASC,
                 t.statement_payment_on DESC,
                 CASE WHEN t.payment_category = '1回' THEN 0 ELSE 1 END ASC,
                 CASE WHEN t.payment_method = '銀行口座' THEN 0 ELSE 1 END ASC,
                 t.payment_method ASC,
                 t.id DESC
-            LIMIT $limit OFFSET $offset";
+            " . ($usesPaging ? "LIMIT $limit OFFSET $offset" : '');
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $items = $stmt->fetchAll();

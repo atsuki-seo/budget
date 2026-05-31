@@ -18,7 +18,8 @@ try {
         "SELECT
             DATE_FORMAT(t.statement_payment_on, '%Y-%m-01') AS period_start,
             COUNT(*) AS transaction_count,
-            COALESCE(SUM(t.billing_amount), 0) AS amount
+            COALESCE(SUM(CASE WHEN t.transaction_type = 'income' THEN t.billing_amount ELSE 0 END), 0) AS income_amount,
+            COALESCE(SUM(CASE WHEN t.transaction_type = 'expense' THEN t.billing_amount ELSE 0 END), 0) AS expense_amount
          FROM transactions t
          $whereSql
          GROUP BY period_start
@@ -32,7 +33,9 @@ try {
         $items[] = [
             'period_start' => $row['period_start'],
             'transaction_count' => (int)$row['transaction_count'],
-            'amount' => (int)$row['amount'],
+            'income_amount' => (int)$row['income_amount'],
+            'expense_amount' => (int)$row['expense_amount'],
+            'amount' => (int)$row['expense_amount'],
         ];
     }
 

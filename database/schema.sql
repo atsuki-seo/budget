@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS imports (
 CREATE TABLE IF NOT EXISTS transactions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     import_id BIGINT UNSIGNED NULL,
+    transaction_type VARCHAR(20) NOT NULL DEFAULT 'expense',
     statement_payment_on DATE NOT NULL,
     used_on DATE NOT NULL,
     merchant VARCHAR(255) NOT NULL,
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_transactions_import_id (import_id),
+    KEY idx_transactions_transaction_type (transaction_type),
     KEY idx_transactions_statement_payment_on (statement_payment_on),
     KEY idx_transactions_used_on (used_on),
     KEY idx_transactions_merchant (merchant),

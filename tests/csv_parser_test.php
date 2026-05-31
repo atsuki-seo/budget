@@ -61,6 +61,7 @@ $parsed = test_parse("\xEF\xBB\xBF" . $header
 
 test_assert($parsed['statement_payment_on'] === '2026-04-27', 'statement payment date is normalized');
 test_assert(count($parsed['rows']) === 2, 'BOM UTF-8 CSV rows are parsed');
+test_assert($parsed['rows'][0]['fields']['transaction_type'] === 'expense', 'card CSV rows are expenses');
 test_assert($parsed['rows'][0]['fields']['used_on'] === '2026-03-01', 'used date is normalized');
 test_assert($parsed['rows'][0]['fields']['statement_payment_on'] === '2026-04-27', 'row statement payment date is normalized');
 test_assert($parsed['rows'][0]['fields']['usage_amount'] === 111111, 'usage amount is parsed');
@@ -98,19 +99,31 @@ $bank = test_parse_cp932($bankHeader
     . '"2026","5","27","1","36","23","0000101","DUMMY_BANK_EXPENSE_MERCHANT　　　　　　　","22222","","877779",""' . "\r\n"
     . '"2026","5","27","1","40","0","0000201","DUMMY_EXCLUDED_INVESTMENT","33333","","844446",""' . "\r\n"
     . '"2026","5","27","1","46","6","0000301","DUMMY_EXCLUDED_CARD_PAYMENT","44444","","800002",""' . "\r\n"
-    . '"2026","5","31","12","17","4","0000101","DUMMY_EXCLUDED_TRANSFER","333333","","700003",""' . "\r\n");
+    . '"2026","5","31","12","17","4","0000101","DUMMY_EXCLUDED_TRANSFER","","333333","700003",""' . "\r\n");
 
 test_assert($bank['source_type'] === 'bank_csv', 'CP932 bank CSV source type is detected');
 test_assert($bank['date_from'] === '2026-05-20', 'bank CSV date range starts from the first operation date');
 test_assert($bank['date_to'] === '2026-05-31', 'bank CSV date range ends at the last operation date');
 test_assert($bank['statement_payment_on'] === '2026-05-31', 'bank CSV import date is the last operation date');
-test_assert(count($bank['rows']) === 1, 'bank CSV excludes income and configured merchants');
-test_assert($bank['rows'][0]['fields']['used_on'] === '2026-05-27', 'bank CSV used date is normalized');
-test_assert($bank['rows'][0]['fields']['statement_payment_on'] === '2026-05-27', 'bank CSV payment date matches used date');
-test_assert($bank['rows'][0]['fields']['merchant'] === 'DUMMY_BANK_EXPENSE_MERCHANT', 'bank CSV merchant is trimmed');
-test_assert($bank['rows'][0]['fields']['payment_method'] === '銀行口座', 'bank CSV payment method is fixed');
-test_assert($bank['rows'][0]['fields']['payment_category'] === '1回', 'bank CSV payment category is fixed');
-test_assert($bank['rows'][0]['fields']['usage_amount'] === 22222, 'bank CSV usage amount is parsed');
-test_assert($bank['rows'][0]['fields']['billing_amount'] === 22222, 'bank CSV billing amount is parsed');
+test_assert(count($bank['rows']) === 3, 'bank CSV imports deposits and excludes configured payment merchants');
+test_assert($bank['rows'][0]['fields']['transaction_type'] === 'income', 'bank CSV deposit is normalized as income');
+test_assert($bank['rows'][0]['fields']['used_on'] === '2026-05-20', 'bank CSV income date is normalized');
+test_assert($bank['rows'][0]['fields']['statement_payment_on'] === '2026-05-20', 'bank CSV income received date matches operation date');
+test_assert($bank['rows'][0]['fields']['merchant'] === 'DUMMY_BANK_INCOME_SOURCE', 'bank CSV income description is preserved');
+test_assert($bank['rows'][0]['fields']['payment_method'] === '銀行口座', 'bank CSV income receiving method is fixed');
+test_assert($bank['rows'][0]['fields']['payment_category'] === '入金', 'bank CSV income payment category is fixed');
+test_assert($bank['rows'][0]['fields']['usage_amount'] === 111111, 'bank CSV income usage amount is parsed');
+test_assert($bank['rows'][0]['fields']['billing_amount'] === 111111, 'bank CSV income billing amount is parsed');
+test_assert($bank['rows'][1]['fields']['transaction_type'] === 'expense', 'bank CSV payment is normalized as expense');
+test_assert($bank['rows'][1]['fields']['used_on'] === '2026-05-27', 'bank CSV expense used date is normalized');
+test_assert($bank['rows'][1]['fields']['statement_payment_on'] === '2026-05-27', 'bank CSV expense payment date matches used date');
+test_assert($bank['rows'][1]['fields']['merchant'] === 'DUMMY_BANK_EXPENSE_MERCHANT', 'bank CSV expense merchant is trimmed');
+test_assert($bank['rows'][1]['fields']['payment_method'] === '銀行口座', 'bank CSV expense payment method is fixed');
+test_assert($bank['rows'][1]['fields']['payment_category'] === '1回', 'bank CSV expense payment category is fixed');
+test_assert($bank['rows'][1]['fields']['usage_amount'] === 22222, 'bank CSV expense usage amount is parsed');
+test_assert($bank['rows'][1]['fields']['billing_amount'] === 22222, 'bank CSV expense billing amount is parsed');
+test_assert($bank['rows'][2]['fields']['transaction_type'] === 'income', 'bank CSV exclusion list does not drop income rows');
+test_assert($bank['rows'][2]['fields']['merchant'] === 'DUMMY_EXCLUDED_TRANSFER', 'bank CSV income exclusion-name description is preserved');
+test_assert($bank['rows'][2]['fields']['billing_amount'] === 333333, 'bank CSV exclusion-name income amount is parsed');
 
 echo "OK\n";

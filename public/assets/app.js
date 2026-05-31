@@ -11,8 +11,6 @@ const state = {
   loggedIn: false,
   transactions: [],
   total: 0,
-  limit: 100,
-  offset: 0,
   imports: [],
   importsTotal: 0,
   importsLimit: 5,
@@ -32,6 +30,10 @@ const manualPaymentMethods = [
   'タッチ決済',
   '銀行口座',
   '現金',
+];
+const manualReceivingMethods = [
+  '現金',
+  '銀行口座',
 ];
 const nonCardPaymentMethods = new Set(['銀行口座', '現金']);
 const manualInstallmentCounts = [2, 3, 5, 6, 10, 12, 15, 18, 20, 24, 30, 36, 48];
@@ -153,11 +155,12 @@ function bindTransactionsElements() {
   elements.monthFromSelect = $('#filtersForm select[name="date_from_month"]');
   elements.monthToSelect = $('#filtersForm select[name="date_to_month"]');
   elements.resetFiltersButton = $('#resetFiltersButton');
-  elements.summaryAmount = $('#summaryAmount');
-  elements.resultCount = $('#resultCount');
-  elements.transactionsBody = $('#transactionsBody');
-  elements.prevPageButton = $('#prevPageButton');
-  elements.nextPageButton = $('#nextPageButton');
+  elements.summaryIncomeAmount = $('#summaryIncomeAmount');
+  elements.summaryExpenseAmount = $('#summaryExpenseAmount');
+  elements.incomeResultCount = $('#incomeResultCount');
+  elements.expenseResultCount = $('#expenseResultCount');
+  elements.incomeTransactionsBody = $('#incomeTransactionsBody');
+  elements.expenseTransactionsBody = $('#expenseTransactionsBody');
 }
 
 function bindAdminElements() {
@@ -166,9 +169,12 @@ function bindAdminElements() {
   elements.manualEntryDialog = $('#manualEntryDialog');
   elements.manualEntryForm = $('#manualEntryForm');
   elements.cancelManualEntryButton = $('#cancelManualEntryButton');
+  elements.manualTransactionType = [...document.querySelectorAll('input[name="transaction_type"]')];
   elements.manualUsedOnLabel = $('#manualUsedOnLabel');
   elements.manualUsedOn = $('#manualUsedOn');
+  elements.manualMerchantLabel = $('#manualMerchantLabel');
   elements.manualMerchant = $('#manualMerchant');
+  elements.manualPaymentMethodLabel = $('#manualPaymentMethodLabel');
   elements.manualPaymentMethod = $('#manualPaymentMethod');
   elements.manualAmount = $('#manualAmount');
   elements.manualCardDetails = $('#manualCardDetails');
@@ -179,6 +185,7 @@ function bindAdminElements() {
   elements.manualContinue = $('#manualContinue');
   elements.manualPaymentCategoryMode = [...document.querySelectorAll('input[name="payment_category_mode"]')];
   elements.manualErrors = {
+    transactionType: $('#manualTransactionTypeError'),
     usedOn: $('#manualUsedOnError'),
     merchant: $('#manualMerchantError'),
     paymentMethod: $('#manualPaymentMethodError'),
@@ -281,6 +288,18 @@ function replaceSelectOptions(select, values, selectedValue = '') {
   }
 }
 
+function selectedManualTransactionType() {
+  const selected = elements.manualTransactionType.find((input) => input.checked);
+  return selected ? selected.value : 'expense';
+}
+
+function setManualTransactionType(transactionType) {
+  for (const input of elements.manualTransactionType) {
+    input.checked = input.value === transactionType;
+  }
+  updateManualTransactionTypeControls();
+}
+
 function selectedPaymentCategoryMode() {
   const selected = elements.manualPaymentCategoryMode.find((input) => input.checked);
   return selected ? selected.value : 'one_time';
@@ -313,7 +332,26 @@ function updateManualPaymentCategoryControls() {
 }
 
 function updateManualPaymentMethodControls() {
+  const isIncome = selectedManualTransactionType() === 'income';
+  if (isIncome) {
+    elements.manualUsedOnLabel.textContent = '受取日';
+    elements.manualMerchantLabel.textContent = '摘要';
+    elements.manualPaymentMethodLabel.textContent = '受取方法';
+    elements.manualCardDetails.hidden = true;
+    elements.manualStatementPaymentOn.disabled = true;
+    elements.manualInstallmentCount.disabled = true;
+    elements.manualInstallmentNumber.disabled = true;
+    for (const input of elements.manualPaymentCategoryMode) {
+      input.disabled = true;
+    }
+    elements.manualStatementPaymentOn.value = elements.manualUsedOn.value;
+    setPaymentCategoryMode('one_time');
+    return;
+  }
+
   const isCard = isManualCardPaymentMethod(elements.manualPaymentMethod.value);
+  elements.manualMerchantLabel.textContent = '店名・商品名';
+  elements.manualPaymentMethodLabel.textContent = '決済方法';
   elements.manualUsedOnLabel.textContent = isCard ? '利用日' : '支払日';
   elements.manualCardDetails.hidden = !isCard;
   elements.manualStatementPaymentOn.disabled = !isCard;
@@ -329,6 +367,18 @@ function updateManualPaymentMethodControls() {
   } else {
     updateManualPaymentCategoryControls();
   }
+}
+
+function updateManualTransactionTypeControls() {
+  const isIncome = selectedManualTransactionType() === 'income';
+  const options = isIncome ? manualReceivingMethods : manualPaymentMethods;
+  const currentPaymentMethod = elements.manualPaymentMethod.value;
+  replaceSelectOptions(
+    elements.manualPaymentMethod,
+    options,
+    options.includes(currentPaymentMethod) ? currentPaymentMethod : options[0]
+  );
+  updateManualPaymentMethodControls();
 }
 
 function initializeManualEntryControls() {
@@ -347,6 +397,7 @@ function clearManualErrors() {
   }
 
   for (const input of [
+    ...elements.manualTransactionType,
     elements.manualUsedOn,
     elements.manualMerchant,
     elements.manualPaymentMethod,
@@ -367,6 +418,7 @@ function renderManualErrors(errors) {
   clearManualErrors();
 
   const fieldInputs = {
+    transactionType: elements.manualTransactionType[0],
     usedOn: elements.manualUsedOn,
     merchant: elements.manualMerchant,
     paymentMethod: elements.manualPaymentMethod,
@@ -384,8 +436,9 @@ function renderManualErrors(errors) {
 }
 
 function focusFirstManualError(errors) {
-  const fields = ['usedOn', 'merchant', 'paymentMethod', 'amount', 'statementPaymentOn', 'paymentCategory'];
+  const fields = ['transactionType', 'paymentMethod', 'usedOn', 'merchant', 'amount', 'statementPaymentOn', 'paymentCategory'];
   const fieldInputs = {
+    transactionType: elements.manualTransactionType[0],
     usedOn: elements.manualUsedOn,
     merchant: elements.manualMerchant,
     paymentMethod: elements.manualPaymentMethod,
@@ -410,23 +463,35 @@ function manualPaymentCategoryValue() {
 
 function validateManualEntryForm() {
   const errors = {};
+  const transactionType = selectedManualTransactionType();
   const usedOn = elements.manualUsedOn.value;
   const merchant = elements.manualMerchant.value.trim();
   const paymentMethod = elements.manualPaymentMethod.value;
   const amount = normalizeManualAmount(elements.manualAmount.value);
+  const isIncome = transactionType === 'income';
   const isCard = isManualCardPaymentMethod(paymentMethod);
 
+  if (!['expense', 'income'].includes(transactionType)) {
+    errors.transactionType = '種別を選択してください。';
+  }
+
   if (!isValidDateValue(usedOn)) {
-    errors.usedOn = isCard ? '有効な利用日を入力してください。' : '有効な支払日を入力してください。';
+    errors.usedOn = isIncome
+      ? '有効な受取日を入力してください。'
+      : (isCard ? '有効な利用日を入力してください。' : '有効な支払日を入力してください。');
   }
 
   if (merchant === '') {
-    errors.merchant = '店名・商品名を入力してください。';
+    errors.merchant = isIncome ? '摘要を入力してください。' : '店名・商品名を入力してください。';
   } else if (merchant.length > 255) {
-    errors.merchant = '店名・商品名は255文字以内で入力してください。';
+    errors.merchant = isIncome ? '摘要は255文字以内で入力してください。' : '店名・商品名は255文字以内で入力してください。';
   }
 
-  if (!manualPaymentMethods.includes(paymentMethod)) {
+  if (isIncome) {
+    if (!manualReceivingMethods.includes(paymentMethod)) {
+      errors.paymentMethod = '受取方法を選択してください。';
+    }
+  } else if (!manualPaymentMethods.includes(paymentMethod)) {
     errors.paymentMethod = '決済方法を選択してください。';
   }
 
@@ -436,7 +501,7 @@ function validateManualEntryForm() {
 
   let statementPaymentOn = usedOn;
   let paymentCategory = '1回';
-  if (isCard) {
+  if (!isIncome && isCard) {
     statementPaymentOn = elements.manualStatementPaymentOn.value;
     paymentCategory = manualPaymentCategoryValue();
     if (!isValidDateValue(statementPaymentOn)) {
@@ -461,7 +526,18 @@ function validateManualEntryForm() {
   }
 
   clearManualErrors();
+  if (isIncome) {
+    return {
+      transaction_type: 'income',
+      received_on: usedOn,
+      description: merchant,
+      receiving_method: paymentMethod,
+      amount,
+    };
+  }
+
   return {
+    transaction_type: 'expense',
     used_on: usedOn,
     merchant,
     payment_method: paymentMethod,
@@ -478,6 +554,7 @@ function resetManualEntryForm() {
   const today = localDateValue();
   elements.manualUsedOn.value = today;
   elements.manualStatementPaymentOn.value = today;
+  setManualTransactionType('expense');
   elements.manualPaymentMethod.value = manualPaymentMethods[0];
   elements.manualInstallmentCount.value = String(manualInstallmentCounts[0]);
   updateManualInstallmentNumbers();
@@ -488,7 +565,7 @@ function resetManualEntryForm() {
 function showManualEntryDialog() {
   resetManualEntryForm();
   if (elements.manualEntryDialog.open) {
-    elements.manualUsedOn.focus();
+    elements.manualTransactionType[0].focus();
     return;
   }
 
@@ -498,7 +575,7 @@ function showManualEntryDialog() {
     elements.manualEntryDialog.setAttribute('open', '');
   }
   window.requestAnimationFrame(() => {
-    elements.manualUsedOn.focus();
+    elements.manualTransactionType[0].focus();
   });
 }
 
@@ -515,7 +592,7 @@ function prepareNextManualEntry() {
   clearManualErrors();
   elements.manualMerchant.value = '';
   elements.manualAmount.value = '';
-  updateManualPaymentMethodControls();
+  updateManualTransactionTypeControls();
   window.requestAnimationFrame(() => {
     elements.manualMerchant.focus();
   });
@@ -654,24 +731,12 @@ function bindTransactionsEvents() {
     event.preventDefault();
     updateSelectedMonthsFromControls(event.target);
     renderMonthFilters();
-    state.offset = 0;
     await refreshData();
   });
 
   elements.resetFiltersButton.addEventListener('click', async () => {
     resetMonthFilters();
-    state.offset = 0;
     await refreshData();
-  });
-
-  elements.prevPageButton.addEventListener('click', async () => {
-    state.offset = Math.max(0, state.offset - state.limit);
-    await loadTransactions();
-  });
-
-  elements.nextPageButton.addEventListener('click', async () => {
-    state.offset += state.limit;
-    await loadTransactions();
   });
 }
 
@@ -686,10 +751,17 @@ function bindAdminEvents() {
   elements.manualEntryForm.addEventListener('submit', submitManualEntry);
 
   elements.manualUsedOn.addEventListener('change', () => {
-    if (!isManualCardPaymentMethod(elements.manualPaymentMethod.value)) {
+    if (
+      selectedManualTransactionType() === 'income'
+      || !isManualCardPaymentMethod(elements.manualPaymentMethod.value)
+    ) {
       elements.manualStatementPaymentOn.value = elements.manualUsedOn.value;
     }
   });
+
+  for (const input of elements.manualTransactionType) {
+    input.addEventListener('change', updateManualTransactionTypeControls);
+  }
 
   elements.manualPaymentMethod.addEventListener('change', updateManualPaymentMethodControls);
 
@@ -788,18 +860,13 @@ function selectedMonthRangeDates() {
   };
 }
 
-function queryParams({ includePaging = false } = {}) {
+function queryParams() {
   const params = new URLSearchParams();
 
   const range = selectedMonthRangeDates();
   if (range !== null) {
     params.set('date_from', range.dateFrom);
     params.set('date_to', range.dateTo);
-  }
-
-  if (includePaging) {
-    params.set('limit', String(state.limit));
-    params.set('offset', String(state.offset));
   }
 
   return params;
@@ -931,7 +998,6 @@ async function loadAvailableMonths() {
 
 async function refreshData() {
   if (state.availableMonths.length === 0) {
-    state.offset = 0;
     state.transactions = [];
     state.total = 0;
     renderSummary([]);
@@ -953,8 +1019,10 @@ async function loadSummary() {
 }
 
 function renderSummary(items) {
-  const totalAmount = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  elements.summaryAmount.textContent = formatCurrency(totalAmount);
+  const incomeAmount = items.reduce((sum, item) => sum + Number(item.income_amount || 0), 0);
+  const expenseAmount = items.reduce((sum, item) => sum + Number(item.expense_amount || 0), 0);
+  elements.summaryIncomeAmount.textContent = formatCurrency(incomeAmount);
+  elements.summaryExpenseAmount.textContent = formatCurrency(expenseAmount);
 }
 
 async function loadTransactions() {
@@ -962,17 +1030,14 @@ async function loadTransactions() {
     if (state.availableMonths.length === 0) {
       state.transactions = [];
       state.total = 0;
-      state.offset = 0;
       renderTransactions();
       return;
     }
 
-    const params = queryParams({ includePaging: true });
+    const params = queryParams();
     const data = await api(`api/transactions.php?${params.toString()}`);
     state.transactions = data.items || [];
     state.total = Number(data.total || 0);
-    state.limit = Number(data.limit || state.limit);
-    state.offset = Number(data.offset || state.offset);
     renderTransactions();
   } catch (error) {
     showToast(error.message);
@@ -991,22 +1056,42 @@ function appendCell(row, label, text, className) {
   return cell;
 }
 
-function renderTransactions() {
-  const start = state.total === 0 ? 0 : state.offset + 1;
-  const end = Math.min(state.total, state.offset + state.transactions.length);
-  elements.resultCount.textContent = `${start}-${end} / ${state.total}件`;
-  elements.prevPageButton.disabled = state.offset <= 0;
-  elements.nextPageButton.disabled = state.offset + state.limit >= state.total;
+function renderEmptyRow(body, message, colspan) {
+  const row = createElement('tr');
+  const cell = createElement('td', { className: 'empty', text: message, attrs: { colspan } });
+  row.append(cell);
+  body.replaceChildren(row);
+}
 
-  if (state.transactions.length === 0) {
-    const row = createElement('tr');
-    const cell = createElement('td', { className: 'empty', text: '明細なし', attrs: { colspan: 9 } });
-    row.append(cell);
-    elements.transactionsBody.replaceChildren(row);
+function renderIncomeTransactions(transactions) {
+  elements.incomeResultCount.textContent = `${transactions.length}件`;
+
+  if (transactions.length === 0) {
+    renderEmptyRow(elements.incomeTransactionsBody, '収入明細なし', 4);
     return;
   }
 
-  const rows = state.transactions.map((transaction) => {
+  const rows = transactions.map((transaction) => {
+    const row = createElement('tr');
+    appendCell(row, '受取日', formatDate(transaction.statement_payment_on));
+    appendCell(row, '摘要', transaction.merchant, 'merchant');
+    appendCell(row, '受取方法', transaction.payment_method);
+    appendCell(row, '金額', formatCurrency(transaction.billing_amount), 'number');
+    return row;
+  });
+
+  elements.incomeTransactionsBody.replaceChildren(...rows);
+}
+
+function renderExpenseTransactions(transactions) {
+  elements.expenseResultCount.textContent = `${transactions.length}件`;
+
+  if (transactions.length === 0) {
+    renderEmptyRow(elements.expenseTransactionsBody, '支出明細なし', 9);
+    return;
+  }
+
+  const rows = transactions.map((transaction) => {
     const row = createElement('tr');
     appendCell(row, '支払日', formatDate(transaction.statement_payment_on));
     appendCell(row, '店名', transaction.merchant, 'merchant');
@@ -1020,7 +1105,14 @@ function renderTransactions() {
     return row;
   });
 
-  elements.transactionsBody.replaceChildren(...rows);
+  elements.expenseTransactionsBody.replaceChildren(...rows);
+}
+
+function renderTransactions() {
+  const incomeTransactions = state.transactions.filter((transaction) => transaction.transaction_type === 'income');
+  const expenseTransactions = state.transactions.filter((transaction) => transaction.transaction_type !== 'income');
+  renderIncomeTransactions(incomeTransactions);
+  renderExpenseTransactions(expenseTransactions);
 }
 
 async function loadImports() {
