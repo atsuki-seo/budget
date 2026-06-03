@@ -106,10 +106,29 @@ return [
 PHP
 ```
 
+For Codex-operated production MySQL access, keep the local editable source at `/home/atsuki/.codex/mysql/budget.cnf`, using `budget.cnf.example` as the template. Sync that file to the Xserver runtime copy before running production DB commands. Do not commit or print real credential values.
+
+```text
+Local source: /home/atsuki/.codex/mysql/budget.cnf
+Xserver runtime copy: ~/.codex/mysql/budget.cnf
+```
+
+```ini
+[client]
+host=YOUR_DB_HOST
+user=YOUR_DB_USER
+password=YOUR_DB_PASSWORD
+database=YOUR_DB_NAME
+default-character-set=utf8mb4
+```
+
+Use directory mode `700` and file mode `600`.
+
 Create the database tables:
 
 ```sh
-mysql -h YOUR_DB_HOST -u YOUR_DB_USER -p YOUR_DB_NAME < database/schema.sql
+scp database/schema.sql xserver:~/YOUR_DOMAIN/schema.sql
+ssh xserver 'mysql --defaults-extra-file=~/.codex/mysql/budget.cnf < ~/YOUR_DOMAIN/schema.sql'
 ```
 
 For local HTTP-only development, set `'cookie_secure' => false` in a local ignored `budget-config.php`.
@@ -118,22 +137,22 @@ Existing deployments created before manual entry support must add `imports.sourc
 Copy the migration file to the server, then run it against the production database:
 
 ```sh
-scp -P YOUR_XSERVER_PORT database/migrations/20260531_add_imports_source_type.sql \
-  YOUR_XSERVER_USER@YOUR_XSERVER_HOST:~/YOUR_DOMAIN/20260531_add_imports_source_type.sql
+scp database/migrations/20260531_add_imports_source_type.sql \
+  xserver:~/YOUR_DOMAIN/20260531_add_imports_source_type.sql
 
-ssh -p YOUR_XSERVER_PORT YOUR_XSERVER_USER@YOUR_XSERVER_HOST \
-  'mysql -h YOUR_DB_HOST -u YOUR_DB_USER -p YOUR_DB_NAME < ~/YOUR_DOMAIN/20260531_add_imports_source_type.sql'
+ssh xserver \
+  'mysql --defaults-extra-file=~/.codex/mysql/budget.cnf < ~/YOUR_DOMAIN/20260531_add_imports_source_type.sql'
 ```
 
 Existing deployments created before income support must add `transactions.transaction_type`.
 Copy the migration file to the server, then run it against the production database:
 
 ```sh
-scp -P YOUR_XSERVER_PORT database/migrations/20260531_add_transaction_type.sql \
-  YOUR_XSERVER_USER@YOUR_XSERVER_HOST:~/YOUR_DOMAIN/20260531_add_transaction_type.sql
+scp database/migrations/20260531_add_transaction_type.sql \
+  xserver:~/YOUR_DOMAIN/20260531_add_transaction_type.sql
 
-ssh -p YOUR_XSERVER_PORT YOUR_XSERVER_USER@YOUR_XSERVER_HOST \
-  'mysql -h YOUR_DB_HOST -u YOUR_DB_USER -p YOUR_DB_NAME < ~/YOUR_DOMAIN/20260531_add_transaction_type.sql'
+ssh xserver \
+  'mysql --defaults-extra-file=~/.codex/mysql/budget.cnf < ~/YOUR_DOMAIN/20260531_add_transaction_type.sql'
 ```
 
 ## Manual Transaction Entry

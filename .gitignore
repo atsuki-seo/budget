@@ -5,6 +5,7 @@
 .env.*
 !.env.example
 budget-config.php
+budget.cnf
 public/budget-config.php
 
 # Local budget exports
